@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "org_name" text DEFAULT '' NOT NULL;
