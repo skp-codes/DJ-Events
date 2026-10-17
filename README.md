@@ -5,7 +5,7 @@ An online, multi-user version of the ReY Events Manager: a mobile-first tracker 
 ## Features
 
 - **Everything from the original app:** dashboard with health ring and tiles, inquiries and follow-up reminders, inquiry → booking conversion, resource allocation, payments, search, business and capital settings, JSON/Excel backup and restore, browser notifications.
-- **Private accounts:** people sign up with a username, email and password. Each workspace is visible only to its owner and the admin.
+- **Private accounts:** people sign up with a username, email and password (8+ characters). Each workspace is visible only to its owner and the admin.
 - **Admin approval:** new accounts stay locked until the admin approves them.
 - **Password recovery:** "Forgot password?" emails a reset link. If someone can't get into their email, they can send a reset request to the admin instead.
 - **Admin tools** (More → Admin): approve, disable or delete accounts, set a new password for anyone, review help requests, and open any user's workspace to view or edit their data.

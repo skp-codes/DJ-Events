@@ -289,7 +289,7 @@ function renderAuthScreen(mode, opts){
       '<div class="field"><label>Choose a username</label><input type="text" id="suUser" autocomplete="username" autocapitalize="none" placeholder="e.g. dj-rey"></div>' +
       '<div class="field"><label>Organisation name</label><input type="text" id="suOrg" autocomplete="organization" maxlength="60" placeholder="e.g. Chennai Beats"></div>' +
       '<div class="field"><label>Email</label><input type="email" id="suEmail" autocomplete="email" placeholder="you@example.com"></div>' +
-      '<div class="field"><label>Choose a password</label><input type="password" id="suPass1" autocomplete="new-password" placeholder="At least 6 characters"></div>' +
+      '<div class="field"><label>Choose a password</label><input type="password" id="suPass1" autocomplete="new-password" placeholder="At least 8 characters"></div>' +
       '<div class="field"><label>Confirm password</label><input type="password" id="suPass2" autocomplete="new-password" placeholder="Re-enter password"></div>' +
       '<button class="btn primary" id="suBtn">Create account</button>' +
       '<div class="auth-toggle" style="margin-top:12px;"><span>Already have an account?</span><button id="toLoginBtn" type="button">Sign in</button></div>';
@@ -302,7 +302,7 @@ function renderAuthScreen(mode, opts){
       if(!/^[a-z0-9][a-z0-9._-]{2,29}$/i.test(u)){ authNotice('Username must be 3–30 characters: letters, numbers, dot, dash or underscore (no spaces).'); return; }
       if(!o){ authNotice('Enter your organisation name.'); return; }
       if(!e || e.indexOf('@')<0){ toast('Enter your email address'); return; }
-      if(p1.length<6){ toast('Password must be at least 6 characters'); return; }
+      if(p1.length<8){ toast('Password must be at least 8 characters'); return; }
       if(p1!==p2){ toast("Passwords don't match"); return; }
       authBusy(btn, true, 'Creating account…');
       api('POST', '/api/auth/signup', {username:u, orgName:o, email:e, password:p1}).then(function(r){
@@ -373,13 +373,13 @@ function renderAuthScreen(mode, opts){
   if(mode==='newpass'){
     sub.textContent = 'Choose a new password — your inquiries, bookings and payments are not touched, only the password changes.';
     card.innerHTML = authMsg(opts) +
-      '<div class="field"><label>New password</label><input type="password" id="npPass1" autocomplete="new-password" placeholder="At least 6 characters"></div>' +
+      '<div class="field"><label>New password</label><input type="password" id="npPass1" autocomplete="new-password" placeholder="At least 8 characters"></div>' +
       '<div class="field"><label>Confirm new password</label><input type="password" id="npPass2" autocomplete="new-password" placeholder="Re-enter new password"></div>' +
       '<button class="btn primary" id="npBtn">Set new password</button>';
     onEnter(['npPass2'], 'npBtn');
     document.getElementById('npBtn').onclick = function(){
       var btn = this, p1 = val('npPass1'), p2 = val('npPass2');
-      if(p1.length<6){ toast('Password must be at least 6 characters'); return; }
+      if(p1.length<8){ toast('Password must be at least 8 characters'); return; }
       if(p1!==p2){ toast("Passwords don't match"); return; }
       authBusy(btn, true, 'Saving…');
       window.ReyAuth.setPassword(p1).then(function(){
@@ -599,7 +599,7 @@ function openAdminUser(id){
     actions +
     '<div class="section-title">Reset password</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
-      '<div class="field" style="margin-bottom:10px;"><label>New password for '+esc(u.username)+'</label><input type="text" id="admNewPass" autocomplete="off" placeholder="At least 6 characters"></div>' +
+      '<div class="field" style="margin-bottom:10px;"><label>New password for '+esc(u.username)+'</label><input type="text" id="admNewPass" autocomplete="off" placeholder="At least 8 characters"></div>' +
       '<button class="btn ghost sm" style="width:100%" onclick="adminResetPassword(\''+esc(u.id)+'\')">Set new password</button>' +
       '<div class="hint">Share the new password with them privately. They can change it later from More &rarr; Account.</div>' +
     '</div>' +
@@ -624,7 +624,7 @@ function adminUserAction(id, action){
 }
 function adminResetPassword(id){
   var p = val('admNewPass');
-  if(p.length<6){ toast('Password must be at least 6 characters'); return; }
+  if(p.length<8){ toast('Password must be at least 8 characters'); return; }
   api('POST', '/api/admin/users/'+encodeURIComponent(id), {action:'password', password:p}).then(function(r){
     if(!r.ok){ toast(r.body.error || 'Could not reset password'); return; }
     document.getElementById('admNewPass').value = '';
@@ -679,13 +679,13 @@ function adminResolveRequest(id, status){
 function openChangePassword(){
   openSheet('Change password',
     '<div class="field"><label>Current password</label><input type="password" id="cpCur" autocomplete="current-password"></div>' +
-    '<div class="field"><label>New password</label><input type="password" id="cpNew1" autocomplete="new-password" placeholder="At least 6 characters"></div>' +
+    '<div class="field"><label>New password</label><input type="password" id="cpNew1" autocomplete="new-password" placeholder="At least 8 characters"></div>' +
     '<div class="field"><label>Confirm new password</label><input type="password" id="cpNew2" autocomplete="new-password"></div>',
     '<button class="btn primary" id="cpBtn">Update password</button>');
   document.getElementById('cpBtn').onclick = function(){
     var btn = this, cur = val('cpCur'), n1 = val('cpNew1'), n2 = val('cpNew2');
     if(!cur){ toast('Enter your current password'); return; }
-    if(n1.length<6){ toast('Password must be at least 6 characters'); return; }
+    if(n1.length<8){ toast('Password must be at least 8 characters'); return; }
     if(n1!==n2){ toast("Passwords don't match"); return; }
     authBusy(btn, true, 'Saving…');
     api('POST', '/api/account/password', {currentPassword:cur, newPassword:n1}).then(function(r){

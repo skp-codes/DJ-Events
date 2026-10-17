@@ -9,7 +9,7 @@ export type Profile = typeof profiles.$inferSelect;
 export const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "dj.events.mgr.1980@gmail.com").trim().toLowerCase();
 
 export const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
-export const MIN_PASSWORD = 6;
+export const MIN_PASSWORD = 8;
 
 export function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
