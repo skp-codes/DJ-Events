@@ -1,9 +1,20 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>DJ Events Manager</title>
 <meta name="description" content="Inquiry, booking, allocation and payment tracker for ReY Events Chennai — private accounts, data stored securely online.">
+<meta name="theme-color" content="#5B3AA6">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ReY Events">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style id="app-style">
+  /* password show/hide (public/pw-toggle.js) */
+  .pw-wrap{position:relative;display:block}
+  .pw-wrap input{padding-right:68px!important}
+  .pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--primary);font:inherit;font-size:.85rem;font-weight:600;cursor:pointer;padding:6px 8px;border-radius:8px}
+  .pw-toggle:focus-visible{outline:2px solid var(--primary)}
   :root{
     --bg:#FAF8F4; --surface:#FFFFFF; --surface2:#F1ECE2; --surface3:#EAE3D4;
     --ink:#221D2E; --ink-dim:#726C82; --line:#E6E0D2;
@@ -311,6 +322,12 @@
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script src="/vendor/xlsx.full.min.js"></script>
+<script src="/pw-toggle.js"></script>
 <script src="/app.js"></script>
+<script>
+  /* installable app: offline support over https (or localhost) */
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost"))
+    addEventListener("load", function(){ navigator.serviceWorker.register("/sw.js").catch(function(){}); });
+</script>
 <script type="module" src="/src/auth.ts"></script>
 </body></html>
