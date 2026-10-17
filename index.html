@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>DJ Events Manager</title>
 <meta name="description" content="Inquiry, booking, allocation and payment tracker for ReY Events Chennai — private accounts, data stored securely online.">
-<meta name="theme-color" content="#5B3AA6">
+<script src="/theme.js" data-app="rey-events"></script><meta name="theme-color" content="#5B3AA6">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -27,7 +27,7 @@
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
+    :root:not([data-theme]){
       --bg:#141020; --surface:#1E1930; --surface2:#271F3D; --surface3:#302748;
       --ink:#F3F0FA; --ink-dim:#A79FC2; --line:#372D54;
       --primary:#9B7EE8; --primary-ink:#171227; --primary-soft:#2C2348;
@@ -242,6 +242,16 @@
   .auth-option span{font-size:12.5px; color:var(--ink-dim);}
   .req-card{border:1px solid var(--line); border-radius:12px; padding:11px 12px; margin-bottom:10px; background:var(--surface);}
   .req-card .req-msg{font-size:13px; margin:6px 0 8px; white-space:pre-wrap; word-break:break-word;}
+
+  /* colour themes (theme.js) */
+  :root[data-theme="dark"]{--theme-bar:#141020}
+:root[data-theme="mint"]{--bg:#eef8f3;--surface:#fbfffd;--surface2:#e3f4ec;--surface3:#def0e7;--line:#cfe8dc;--primary:#2e7d62;--primary-soft:#d4efe3;--ink:#18302a;--ink-dim:#4f6b62;--theme-bar:#2e7d62;color-scheme:light}
+:root[data-theme="lavender"]{--bg:#f3f0fb;--surface:#fdfcff;--surface2:#ebe5f8;--surface3:#e8e1f6;--line:#ddd4f0;--primary:#5b4a9e;--primary-soft:#e4dcf7;--ink:#251f3d;--ink-dim:#625a80;--theme-bar:#5b4a9e;color-scheme:light}
+:root[data-theme="peach"]{--bg:#fdf2ec;--surface:#fffcfa;--surface2:#fbe6db;--surface3:#f6e2d7;--line:#f1d6c7;--primary:#a8542e;--primary-soft:#fbe0d2;--ink:#3a2318;--ink-dim:#7a5d50;--theme-bar:#a8542e;color-scheme:light}
+:root[data-theme="sky"]{--bg:#edf5fc;--surface:#fbfdff;--surface2:#e1eefa;--surface3:#dde9f6;--line:#cfe1f2;--primary:#2d6a9f;--primary-soft:#d8e8f8;--ink:#17293b;--ink-dim:#4f6377;--theme-bar:#2d6a9f;color-scheme:light}
+:root[data-theme="rose"]{--bg:#fcf0f3;--surface:#fffbfc;--surface2:#f8e2e8;--surface3:#f4dde4;--line:#efd0d9;--primary:#a43d5f;--primary-soft:#f7dbe3;--ink:#3a1a26;--ink-dim:#7a5763;--theme-bar:#a43d5f;color-scheme:light}
+:root[data-theme="lemon"]{--bg:#fbf8e6;--surface:#fffef6;--surface2:#f5efcc;--surface3:#f0e9c4;--line:#e9e1b5;--primary:#7a6512;--primary-soft:#f3ebc2;--ink:#2f2a10;--ink-dim:#6b6440;--theme-bar:#7a6512;color-scheme:light}
+:root{--thm-card:var(--surface);--thm-ink:var(--ink);--thm-line:var(--line)}
 </style></head><body>
 
 <div id="authScreen">
@@ -264,6 +274,7 @@
         <div class="brand-sub" id="topDate"></div>
       </div>
     </div>
+    <button class="iconbtn" type="button" onclick="AppTheme.open()" aria-label="Colour theme" title="Colour theme" style="margin-right:6px;"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.9 1.4-2l-.3-.8c-.4-1.1.4-2.2 1.6-2.2H17a4 4 0 0 0 4-4c0-5-4-9-9-9Z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg></button>
     <button class="iconbtn" id="searchTopBtn" onclick="openSearchSheet()" aria-label="Search" style="margin-right:6px;">
       <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 21l-4.3-4.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>

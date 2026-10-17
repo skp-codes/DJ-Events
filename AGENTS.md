@@ -12,6 +12,7 @@ Multi-user port of a single-file offline app ("ReY Events Manager"). The UI must
 - `netlify/functions/`: `auth` (signup/login/logout/recover/help), `me`, `data` (workspace GET/PUT), `account` (change password), `admin` (users + requests).
 - `lib/server.ts`: shared server helpers (`getSession`, `ensureProfile`, `ADMIN_EMAIL`).
 - `public/pw-toggle.js`: adds Show/Hide buttons to every password field (watches the DOM, since screens are string-built).
+- `public/theme.js`: colour themes (Auto, Light, Dark and pastel Mint, Lavender, Peach, Sky, Rose, Lemon), chosen from the palette button in the top bar and kept on each device. Each theme's colours are `:root[data-theme="…"]` blocks at the end of the CSS in `index.html`. The system dark mode only applies when no theme is picked (`:root:not([data-theme])`).
 - `public/manifest.webmanifest`, `public/icons/`, `public/sw.js`: installable app (Add to Home Screen) and offline viewing. The service worker never caches `/api/*` or `/.netlify/*`.
 - `db/schema.ts`: Drizzle schema. Migrations go in `netlify/database/migrations/`.
 
