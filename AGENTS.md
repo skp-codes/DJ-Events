@@ -20,3 +20,6 @@ Multi-user port of a single-file offline app ("ReY Events Manager"). The UI must
 - **Approval:** new profiles start as `pending`. `/api/data` rejects anyone who isn't `active` (admins are exempt).
 - Admins open another user's workspace via `/api/data?user=<id>`. The client tracks this in `VIEW_USER` and shows a banner.
 - The original "Export full app (.html)" feature was removed because an offline copy doesn't work with server-side accounts.
+
+## Deploys are manual
+Every commit pushed to GitHub must include `[skip netlify]` in its message so Netlify doesn't build automatically (to save build credits). The owner deploys manually from Netlify → Deploys → Trigger deploy. Link this repo to the EXISTING dj-events Netlify project (it holds the Identity users and Netlify Database); never create a new project from it.

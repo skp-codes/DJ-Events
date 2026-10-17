@@ -29,3 +29,6 @@ npm run dev      # netlify dev on http://localhost:8889 (emulates Identity, Data
 ```
 
 After changing `db/schema.ts`, generate a migration with `npx drizzle-kit generate --name <change>`. Netlify applies migrations on deploy.
+
+## Deploys are manual
+Every commit pushed to GitHub must include `[skip netlify]` in its message so Netlify doesn't build automatically (to save build credits). The owner deploys manually from Netlify → Deploys → Trigger deploy. Link this repo to the EXISTING dj-events Netlify project (it holds the Identity users and Netlify Database); never create a new project from it.
