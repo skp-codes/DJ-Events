@@ -5,6 +5,10 @@ An online, multi-user version of the ReY Events Manager: a mobile-first tracker 
 ## Features
 
 - **Everything from the original app:** dashboard with health ring and tiles, inquiries and follow-up reminders, inquiry → booking conversion, resource allocation, payments, search, business and capital settings, JSON/Excel backup and restore, browser notifications.
+- **Edit inquiries:** fix any inquiry detail after saving (Edit, top right of the inquiry). Contact changes are copied to its booking.
+- **Expenses:** record salary, crew wages, fuel, rentals or any custom type, either for a specific event or as a general overhead. Manage the type list from the Expenses tab or More.
+- **Spend & profit:** dashboard card with revenue, expenses and profit; tap through to the overall summary, then to any event's own spend summary.
+- **Calendar:** bookings carry a start/end time and open in Google Calendar (or as an .ics file) on that date and time, in the chosen Google account and time zone (More → Calendar).
 - **Private accounts:** people sign up with a username, email and password (8+ characters). Each workspace is visible only to its owner and the admin.
 - **Admin approval:** new accounts stay locked until the admin approves them.
 - **Password recovery:** "Forgot password?" emails a reset link. If someone can't get into their email, they can send a reset request to the admin instead.

@@ -8,6 +8,14 @@ var CHANNELS = ['Walk-In / Repeat / Referral','Instagram','Google Search','Weddi
 var INQUIRY_TYPES = ['New Client','Repeat Client','Referral'];
 var LOCATIONS = ['Chennai - Central','Chennai - North','Chennai - South','Chennai - OMR/East','Chennai - West','Out of Station','Other'];
 var PAY_METHODS = ['Cash','UPI','Bank Transfer','Card','Other'];
+var DEFAULT_EXPENSE_TYPES = ['Salary','Crew wages','Fuel','Food & refreshments','Equipment rental','Miscellaneous','Additional expenses'];
+var NEW_TYPE_CHIP = '+ New type';
+function browserTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }catch(e){ return 'Asia/Kolkata'; } }
+var CAL_METHODS = [
+  {key:'google', label:'Google Calendar'},
+  {key:'google-classic', label:'Google Calendar (classic link)'},
+  {key:'ics', label:'Phone calendar app (.ics file)'}
+];
 var RESOURCE_TYPES = [
   {key:'equipment', label:'Equipment'},
   {key:'transport', label:'Transport'},
@@ -27,14 +35,16 @@ var DEFAULT_ALLOC = {
 
 /* ================================ UTIL ================================ */
 function uid(prefix){ var base = Date.now().toString(36) + Math.random().toString(36).slice(2,8); return prefix ? (prefix+'-'+base) : base; }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function todayStr(){ return localDateTimeStr(new Date()).slice(0,10); }
 function nowIso(){ return new Date().toISOString(); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function fmtDate(d){ if(!d) return '—'; var dt=new Date(d+'T00:00:00'); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }
 function fmtDateShort(d){ if(!d) return '—'; var dt=new Date(d+'T00:00:00'); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short'}); }
 function fmtDateTime(iso){ if(!iso) return '—'; var dt=new Date(iso); return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) + ', ' + dt.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}); }
-function fmtMoney(n){ n = Number(n)||0; return '₹' + n.toLocaleString('en-IN',{maximumFractionDigits:0}); }
+function fmtMoney(n){ n = Number(n)||0; return (n<0?'-':'') + '₹' + Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0}); }
 function initials(name){ if(!name) return '?'; var parts=name.trim().split(/\s+/); return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase(); }
+function localDateTimeStr(d){ function z(n){return (n<10?'0':'')+n;} return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+'T'+z(d.getHours())+':'+z(d.getMinutes()); }
+function fmtTime(t){ if(!t) return ''; var p=String(t).split(':'); var d=new Date(2000,0,1,Number(p[0])||0,Number(p[1])||0); return d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}); }
 function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
 function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
 
@@ -116,8 +126,10 @@ function setSyncError(msg){
 function defaultData(){
   return {
     createdAt: nowIso(),
-    inquiries: [], followups: [], bookings: [], resources: [],
+    inquiries: [], followups: [], bookings: [], resources: [], expenses: [],
     settings: {
+      expenseTypes: DEFAULT_EXPENSE_TYPES.slice(),
+      calendar: {method:'google', account:'', timezone: browserTz(), defaultDurationHrs: 5},
       businessName: 'ReY Events Chennai', ownerName: '',
       equipmentTotalInvestment: 800000, equipmentCycleYears: 4, equipmentAlreadyRecovered: 0, equipmentAcquiredYear: 2015,
       transportTotalInvestment: 1100000, transportCycleYears: 7, transportAlreadyRecovered: 0, transportAcquiredYear: 2024,
@@ -132,6 +144,10 @@ function migrateData(d){
   d.settings = d.settings || {};
   var def = defaultData().settings;
   for(var k in def){ if(!(k in d.settings)) d.settings[k] = def[k]; }
+  d.expenses = d.expenses || [];
+  if(!Array.isArray(d.settings.expenseTypes)) d.settings.expenseTypes = DEFAULT_EXPENSE_TYPES.slice();
+  if(!d.settings.calendar || typeof d.settings.calendar!=='object') d.settings.calendar = {};
+  for(var c in def.calendar){ if(!(c in d.settings.calendar)) d.settings.calendar[c] = def.calendar[c]; }
   return d;
 }
 
@@ -706,9 +722,11 @@ function nav(tab){
   document.getElementById('view-'+tab).hidden = false;
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab===tab); });
   document.getElementById('fabBtn').style.display = (tab==='resources') ? 'none' : 'flex';
+  document.getElementById('fabBtn').setAttribute('aria-label', tab==='expenses' ? 'New expense' : 'New inquiry');
   if(renderers[tab]) renderers[tab]();
 }
 
+function fabAction(){ if(currentTab==='expenses') openExpenseForm(); else openInquiryForm(); }
 function openSheet(title, bodyHtml, footHtml){
   document.getElementById('sheetTitle').textContent = title;
   document.getElementById('sheetBody').innerHTML = bodyHtml;
@@ -925,6 +943,7 @@ function renderDashboard(){
       tile('Inquiry → booking', convRate.toFixed(0)+'%', 'conversion rate', 'conversion') +
       tile('Avg. booking value', fmtMoney(avgBooking), 'revenue per booking', 'avgBooking') +
     '</div>' +
+    spendDashHtml() +
     '<div class="section-title">Capital payback</div>' +
     '<div class="card" style="margin-bottom:10px;">' +
       paybackRow('Equipment', equipPace, DB.settings.equipmentTotalInvestment, 'equipmentPayback') +
@@ -944,6 +963,21 @@ function renderDashboard(){
   drawRing(document.getElementById('healthRingMini'), health.total, 22, 3, healthColor(health.total));
   document.getElementById('healthValMini').textContent = health.total;
   document.getElementById('healthValMini').style.color = healthColor(health.total);
+}
+function spendDashHtml(){
+  var t = spendTotals();
+  var spentPct = t.revenue>0 ? clamp(t.total/t.revenue*100,0,100) : (t.total>0?100:0);
+  return '<div class="section-title">Spend &amp; profit</div>' +
+    '<div class="card" style="margin-bottom:10px;cursor:pointer;" onclick="openSpendSummary()">' +
+      '<div class="tiles" style="grid-template-columns:1fr 1fr 1fr;gap:8px;">' +
+        '<div><div class="tlabel" style="font-size:11px;color:var(--ink-dim);font-weight:600;">Revenue</div><div class="num" style="font-weight:700;font-family:Sora,sans-serif;">'+fmtMoney(t.revenue)+'</div></div>' +
+        '<div><div class="tlabel" style="font-size:11px;color:var(--ink-dim);font-weight:600;">Expenses</div><div class="num" style="font-weight:700;font-family:Sora,sans-serif;color:var(--warn)">'+fmtMoney(t.total)+'</div></div>' +
+        '<div><div class="tlabel" style="font-size:11px;color:var(--ink-dim);font-weight:600;">Profit</div><div class="num" style="font-weight:700;font-family:Sora,sans-serif;color:'+profitColor(t.profit)+'">'+fmtMoney(t.profit)+'</div></div>' +
+      '</div>' +
+      '<div class="segbar"><i style="width:'+spentPct+'%;background:var(--warn)"></i></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-dim);margin-top:6px;">' +
+        '<span>'+(t.revenue>0 ? spentPct.toFixed(0)+'% of revenue spent · '+t.margin.toFixed(0)+'% margin' : 'No revenue yet')+'</span><span style="color:var(--primary);font-weight:700;">Per event ›</span></div>' +
+    '</div>';
 }
 function tile(label, val, sub, kind){
   var click = kind ? ' onclick="openTileDetail(\''+kind+'\')" style="cursor:pointer;"' : '';
@@ -1134,7 +1168,7 @@ function renderFollowupTaskRows(){
         '<div class="row-sub">'+esc(f.note||'Follow up')+' · <span style="color:'+(overdue?'var(--bad)':'var(--ink-dim)')+';font-weight:'+(overdue?'700':'600')+'">'+fmtDateTime(f.dueAt)+'</span></div>' +
       '</div>' +
       '<div class="row-end" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">' +
-        '<a class="btn ghost sm" style="text-decoration:none;" href="'+followupCalendarLink(f, inq?inq.name:'')+'" target="_blank" rel="noopener">Calendar</a>' +
+        calButton(followupCalEvent(f, inq?inq.name:''), 'Calendar') +
         '<button class="btn ghost sm" onclick="markFollowupDone(\''+f.id+'\',\''+f.inquiryId+'\',true)">Done</button>' +
       '</div>' +
     '</div>';
@@ -1157,37 +1191,51 @@ renderers.inquiries = renderInquiries;
 
 function setBookingFilter(f){ bookingFilter=f; nav('bookings'); }
 
-/* ---- New inquiry form ---- */
-function openInquiryForm(prefill){
-  prefill = prefill || {};
+/* ---- New / edit inquiry form ---- */
+function openInquiryForm(prefill, editId){
+  var editing = editId ? DB.inquiries.find(function(x){return x.id===editId;}) : null;
+  if(editId && !editing) return;
+  prefill = editing || prefill || {};
+  var ownBooking = editing ? DB.bookings.find(function(b){return b.inquiryId===editing.id;}) : null;
   var f = {
     inquiryDate: prefill.inquiryDate || todayStr(),
     name: prefill.name||'', phone: prefill.phone||'', altPhone: prefill.altPhone||'', email: prefill.email||'',
     location: prefill.location||'', eventType: prefill.eventType||'', channel: prefill.channel||'',
-    inquiryType: prefill.inquiryType||'New Client', eventDate: prefill.eventDate||'', notes: prefill.notes||''
+    inquiryType: prefill.inquiryType||'New Client', eventDate: prefill.eventDate||'', eventTime: prefill.eventTime||'', notes: prefill.notes||''
   };
+  function presetOr(list, v){ return !v || list.indexOf(v)>-1 ? v : null; }
+  // Values typed into an "Other" box come back as free text: select the Other chip and refill the box.
+  var locSel = presetOr(LOCATIONS, f.location), locOther = locSel===null ? f.location : '';
+  var etSel = presetOr(EVENT_TYPES, f.eventType), etOther = etSel===null ? f.eventType : '';
+  var chSel = presetOr(CHANNELS, f.channel), chOther = chSel===null ? f.channel : '';
+  if(locSel===null) locSel = 'Other'; if(etSel===null) etSel = 'Other'; if(chSel===null) chSel = 'Others';
   var body =
     '<div class="field"><label>Inquiry date</label><input type="date" id="fInqDate" value="'+f.inquiryDate+'"></div>' +
     '<div class="field"><label>Client name</label><input type="text" id="fName" placeholder="Full name" value="'+esc(f.name)+'"></div>' +
     '<div class="field"><label>Phone</label><input type="tel" id="fPhone" placeholder="10-digit mobile" value="'+esc(f.phone)+'"></div>' +
     '<div class="field"><label>Alternate contact <span style="opacity:.6">(optional)</span></label><input type="tel" id="fAltPhone" value="'+esc(f.altPhone)+'"></div>' +
     '<div class="field"><label>Email <span style="opacity:.6">(optional)</span></label><input type="text" id="fEmail" placeholder="name@example.com" value="'+esc(f.email)+'"></div>' +
-    '<div class="field"><label>Event location</label>' + chips('fLocation', LOCATIONS, f.location) +
-      otherBox('fLocationOther', 'Type the location', ['Other','Out of Station'].indexOf(f.location)>-1) + '</div>' +
-    '<div class="field"><label>Event type</label>' + chips('fEventType', EVENT_TYPES, f.eventType) +
-      otherBox('fEventTypeOther', 'Type the event type', f.eventType==='Other') + '</div>' +
-    '<div class="field"><label>Enquiry channel</label>' + chips('fChannel', CHANNELS, f.channel) +
-      otherBox('fChannelOther', 'Type the channel', f.channel==='Others') + '</div>' +
+    '<div class="field"><label>Event location</label>' + chips('fLocation', LOCATIONS, locSel) +
+      otherBox('fLocationOther', 'Type the location', ['Other','Out of Station'].indexOf(locSel)>-1) + '</div>' +
+    '<div class="field"><label>Event type</label>' + chips('fEventType', EVENT_TYPES, etSel) +
+      otherBox('fEventTypeOther', 'Type the event type', etSel==='Other') + '</div>' +
+    '<div class="field"><label>Enquiry channel</label>' + chips('fChannel', CHANNELS, chSel) +
+      otherBox('fChannelOther', 'Type the channel', chSel==='Others') + '</div>' +
     '<div class="field"><label>Inquiry type</label>' + chips('fInquiryType', INQUIRY_TYPES, f.inquiryType) + '</div>' +
-    '<div class="field"><label>Event date <span style="opacity:.6">(optional)</span></label><input type="date" id="fEventDate" value="'+f.eventDate+'"></div>' +
+    '<div class="field"><label>Event date <span style="opacity:.6">(optional)</span></label><input type="date" id="fEventDate" value="'+esc(f.eventDate)+'"></div>' +
+    '<div class="field"><label>Event start time <span style="opacity:.6">(optional)</span></label><input type="time" id="fEventTime" value="'+esc(f.eventTime)+'"></div>' +
     '<div id="conflictBox"></div>' +
-    '<div class="section-title" style="margin-top:6px;">Follow-up reminder <span style="opacity:.6;text-transform:none;font-weight:600;">(optional)</span></div>' +
+    (editing ? '' : '<div class="section-title" style="margin-top:6px;">Follow-up reminder <span style="opacity:.6;text-transform:none;font-weight:600;">(optional)</span></div>' +
     '<div class="field"><label>Remind me on</label><input type="datetime-local" id="fFollowupAt" value=""></div>' +
     '<div class="field"><label>Reminder note <span style="opacity:.6">(optional)</span></label><input type="text" id="fFollowupNote" placeholder="e.g. Call back with quote"></div>' +
-    '<div id="fCalLinkWrap" style="display:none;margin:-6px 0 14px;"><a class="btn ghost sm" id="fCalLink" style="text-decoration:none;display:inline-block;" href="#" target="_blank" rel="noopener">Add reminder to Google Calendar</a></div>' +
+    '<div id="fCalLinkWrap" style="display:none;margin:-6px 0 14px;"><button type="button" class="btn ghost sm" id="fCalLink">Add reminder to calendar</button></div>') +
+    (ownBooking ? '<div class="hint" style="margin-bottom:14px;">This inquiry is already a booking. Name, phone, location and channel changes are copied to the booking too.</div>' : '') +
     '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="fNotes" placeholder="Anything else to remember">'+esc(f.notes)+'</textarea></div>';
-  var foot = '<button class="btn primary" id="saveInqBtn">Save inquiry</button>';
-  openSheet('New Inquiry', body, foot);
+  var foot = '<button class="btn primary" id="saveInqBtn">'+(editing?'Save changes':'Save inquiry')+'</button>';
+  openSheet(editing?'Edit Inquiry':'New Inquiry', body, foot);
+  if(locOther) document.getElementById('fLocationOther').value = locOther;
+  if(etOther) document.getElementById('fEventTypeOther').value = etOther;
+  if(chOther) document.getElementById('fChannelOther').value = chOther;
   wireChips('fLocation', false, function(){checkFormConflict();});
   wireOtherBox('fLocation', 'fLocationOther', ['Other','Out of Station']);
   wireChips('fEventType', false, function(){});
@@ -1196,27 +1244,31 @@ function openInquiryForm(prefill){
   wireOtherBox('fChannel', 'fChannelOther', ['Others']);
   wireChips('fInquiryType', false, function(){});
   document.getElementById('fEventDate').addEventListener('change', checkFormConflict);
+  checkFormConflict();
 
   function syncCalLink(){
+    if(!document.getElementById('fFollowupAt')) return;
     var at = document.getElementById('fFollowupAt').value;
     var wrap = document.getElementById('fCalLinkWrap');
     if(!at){ wrap.style.display = 'none'; return; }
     var note = document.getElementById('fFollowupNote').value.trim();
     var nm = document.getElementById('fName').value.trim() || 'Inquiry';
-    var link = followupCalendarLink({dueAt: new Date(at).toISOString(), note: note}, nm);
-    document.getElementById('fCalLink').href = link;
+    var ev = followupCalEvent({dueAt: new Date(at).toISOString(), note: note}, nm);
+    document.getElementById('fCalLink').onclick = function(){ openCalendarEvent(ev); };
     wrap.style.display = '';
   }
-  document.getElementById('fFollowupAt').addEventListener('input', syncCalLink);
-  document.getElementById('fFollowupAt').addEventListener('change', syncCalLink);
-  document.getElementById('fFollowupNote').addEventListener('input', syncCalLink);
-  document.getElementById('fName').addEventListener('input', syncCalLink);
+  if(!editing){
+    document.getElementById('fFollowupAt').addEventListener('input', syncCalLink);
+    document.getElementById('fFollowupAt').addEventListener('change', syncCalLink);
+    document.getElementById('fFollowupNote').addEventListener('input', syncCalLink);
+    document.getElementById('fName').addEventListener('input', syncCalLink);
+  }
 
   function checkFormConflict(){
     var d = document.getElementById('fEventDate').value;
     var box = document.getElementById('conflictBox');
     if(!d){ box.innerHTML=''; return; }
-    var conflict = findConflictingBooking(d);
+    var conflict = findConflictingBooking(d, ownBooking ? ownBooking.id : null);
     if(conflict){
       box.innerHTML = '<div class="modal warnbox" style="margin:0 0 16px;padding:11px 13px;">Already booked on '+fmtDate(d)+': <b>'+esc(conflict.name)+'</b> ('+esc(conflict.eventType)+'). You can still take this inquiry.</div>';
     } else box.innerHTML = '';
@@ -1239,6 +1291,21 @@ function openInquiryForm(prefill){
     if(!channel){ toast('Pick an enquiry channel'); return; }
     if(!inquiryType){ toast('Pick an inquiry type'); return; }
     var save = function(){
+      if(editing){
+        editing.inquiryDate = inquiryDate; editing.name = name; editing.phone = phone;
+        editing.altPhone = document.getElementById('fAltPhone').value.trim();
+        editing.email = document.getElementById('fEmail').value.trim();
+        editing.location = location; editing.eventType = eventType; editing.channel = channel; editing.inquiryType = inquiryType;
+        editing.eventDate = eventDate; editing.eventTime = document.getElementById('fEventTime').value;
+        editing.notes = document.getElementById('fNotes').value.trim(); editing.updatedAt = nowIso();
+        if(ownBooking){
+          ownBooking.name = name; ownBooking.phone = phone; ownBooking.altPhone = editing.altPhone;
+          ownBooking.location = location; ownBooking.channel = channel;
+        }
+        saveData(); openInquiryDetail(editing.id); if(renderers[currentTab]) renderers[currentTab]();
+        toast('Inquiry updated');
+        return;
+      }
       var followupAt = document.getElementById('fFollowupAt').value;
       var rec = {
         id: uid('INQ'), createdAt: nowIso(),
@@ -1249,7 +1316,7 @@ function openInquiryForm(prefill){
         eventType: eventType,
         channel: channel,
         inquiryType: inquiryType,
-        eventDate: eventDate, notes: document.getElementById('fNotes').value.trim(),
+        eventDate: eventDate, eventTime: document.getElementById('fEventTime').value, notes: document.getElementById('fNotes').value.trim(),
         status: followupAt ? 'followup' : 'open'
       };
       DB.inquiries.push(rec);
@@ -1261,7 +1328,8 @@ function openInquiryForm(prefill){
       saveData(); closeSheet(); nav('inquiries'); checkFollowupsDue(true);
       toast(followupAt ? 'Inquiry saved with a follow-up reminder' : 'Inquiry saved');
     };
-    var conflict = eventDate ? findConflictingBooking(eventDate) : null;
+    var conflict = eventDate ? findConflictingBooking(eventDate, ownBooking ? ownBooking.id : null) : null;
+    if(editing && editing.eventDate===eventDate) conflict = null; // date unchanged — don't nag again
     if(conflict){
       confirmModal({
         title:'Already booked that day',
@@ -1288,7 +1356,7 @@ function openInquiryDetail(id){
       (i.email ? '<div class="kv"><span class="k">Email</span><span class="v">'+esc(i.email)+'</span></div>' : '') +
       '<div class="kv"><span class="k">Location</span><span class="v">'+esc(i.location||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Event type</span><span class="v">'+esc(i.eventType)+'</span></div>' +
-      '<div class="kv"><span class="k">Event date</span><span class="v">'+fmtDate(i.eventDate)+'</span></div>' +
+      '<div class="kv"><span class="k">Event date</span><span class="v">'+fmtDate(i.eventDate)+(i.eventTime?' · '+fmtTime(i.eventTime):'')+'</span></div>' +
       '<div class="kv"><span class="k">Channel</span><span class="v">'+esc(i.channel||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Inquiry type</span><span class="v">'+esc(i.inquiryType||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Inquiry date</span><span class="v">'+fmtDate(i.inquiryDate)+'</span></div>' +
@@ -1300,7 +1368,7 @@ function openInquiryDetail(id){
         return '<div class="linkrow"><span style="text-decoration:'+(f.done?'line-through':'none')+';opacity:'+(f.done?'.5':'1')+'">'+esc(f.note||'Follow up')+' — '+fmtDateTime(f.dueAt)+'</span>' +
           (!f.done ? (
             '<span style="display:flex;gap:6px;">' +
-            '<a class="btn ghost sm" style="text-decoration:none;" href="'+followupCalendarLink(f, i.name)+'" target="_blank" rel="noopener">Calendar</a>' +
+            calButton(followupCalEvent(f, i.name), 'Calendar') +
             '<button class="btn ghost sm" onclick="markFollowupDone(\''+f.id+'\',\''+id+'\')">Done</button>' +
             '</span>'
           ) : '') +
@@ -1314,7 +1382,9 @@ function openInquiryDetail(id){
     '</div>' : '<div class="hint">This inquiry has already been converted to a booking.</div>');
 
   openSheet('Inquiry', body);
+  setSheetHeadExtra('<button class="btn ghost sm" onclick="editInquiry(\''+id+'\')">Edit</button>');
 }
+function editInquiry(id){ openInquiryForm(null, id); }
 function markFollowupDone(fid, inqId, refreshListOnly){
   var f = DB.followups.find(function(x){return x.id===fid;});
   if(!f) return;
@@ -1336,12 +1406,12 @@ function markInquiryLost(id){
 /* ---- Follow-up form ---- */
 function openFollowupForm(inquiryId){
   var defDt = new Date(Date.now()+24*3600000);
-  var defStr = defDt.toISOString().slice(0,16);
+  var defStr = localDateTimeStr(defDt);
   var i0 = DB.inquiries.find(function(x){return x.id===inquiryId;});
   var body =
     '<div class="field"><label>Remind me on</label><input type="datetime-local" id="fuDate" value="'+defStr+'"></div>' +
     '<div class="field"><label>Note <span style="opacity:.6">(optional)</span></label><textarea id="fuNote" placeholder="e.g. Call back with revised quote"></textarea></div>' +
-    '<div id="fuCalLinkWrap" style="display:none;margin:-6px 0 14px;"><a class="btn ghost sm" id="fuCalLink" style="text-decoration:none;display:inline-block;" href="#" target="_blank" rel="noopener">Add reminder to Google Calendar</a></div>';
+    '<div id="fuCalLinkWrap" style="display:none;margin:-6px 0 14px;"><button type="button" class="btn ghost sm" id="fuCalLink">Add reminder to calendar</button></div>';
   var foot = '<button class="btn primary" id="fuSaveBtn">Save reminder</button>';
   openSheet('Set Follow-up', body, foot);
   function syncFuCalLink(){
@@ -1349,7 +1419,8 @@ function openFollowupForm(inquiryId){
     var wrap = document.getElementById('fuCalLinkWrap');
     if(!at){ wrap.style.display = 'none'; return; }
     var note = document.getElementById('fuNote').value.trim();
-    document.getElementById('fuCalLink').href = followupCalendarLink({dueAt:new Date(at).toISOString(), note:note}, i0 ? i0.name : 'Inquiry');
+    var ev = followupCalEvent({dueAt:new Date(at).toISOString(), note:note}, i0 ? i0.name : 'Inquiry');
+    document.getElementById('fuCalLink').onclick = function(){ openCalendarEvent(ev); };
     wrap.style.display = '';
   }
   document.getElementById('fuDate').addEventListener('input', syncFuCalLink);
@@ -1381,6 +1452,10 @@ function openConvertForm(inquiryId){
   var body =
     '<div class="hint" style="margin-bottom:14px;">Converting <b>'+esc(i.name)+'</b> — details are prefilled from the inquiry; adjust anything that changed.</div>' +
     '<div class="field"><label>Event date</label><input type="date" id="cEventDate" value="'+esc(i.eventDate)+'"></div>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<div class="field" style="flex:1"><label>Start time</label><input type="time" id="cStartTime" value="'+esc(i.eventTime||'')+'"></div>' +
+      '<div class="field" style="flex:1"><label>End time <span style="opacity:.6">(optional)</span></label><input type="time" id="cEndTime" value=""></div>' +
+    '</div>' +
     '<div id="cConflictBox"></div>' +
     '<div class="field"><label>Total amount (₹)</label><input type="number" id="cTotal" placeholder="e.g. 12000"></div>' +
     '<div class="field"><label>Advance received (₹)</label><input type="number" id="cAdvance" value="0"></div>' +
@@ -1407,7 +1482,8 @@ function openConvertForm(inquiryId){
     var save = function(){
       var b = {
         id: uid('BK'), inquiryId: inquiryId, createdAt: nowIso(), bookingDate: todayStr(),
-        eventDate: eventDate, eventType: i.eventType, name: i.name, phone: i.phone, altPhone: i.altPhone,
+        eventDate: eventDate, startTime: document.getElementById('cStartTime').value, endTime: document.getElementById('cEndTime').value,
+        eventType: i.eventType, name: i.name, phone: i.phone, altPhone: i.altPhone,
         location: i.location, channel: i.channel, totalAmount: total, advanceAmount: advance, advanceDate: advDate,
         payments: advance>0 ? [{id:uid('PAY'), amount:advance, date:advDate, method:'Advance', note:'Advance payment'}] : [],
         equipmentResourceId:null, transportResourceId:null, extraResourceIds:[], status:'confirmed', calendarAdded:false, notes:''
@@ -1464,32 +1540,112 @@ function bookingRow(b){
 }
 renderers.bookings = renderBookings;
 
-function calendarLink(b){
-  var start = b.eventDate.replace(/-/g,'');
-  var endDt = new Date(b.eventDate+'T00:00:00'); endDt.setDate(endDt.getDate()+1);
-  var end = endDt.toISOString().slice(0,10).replace(/-/g,'');
+/* ================================ CALENDAR ================================ */
+// Wall-clock date+time in a given time zone -> the real moment (Date). Used so an 8 PM Chennai
+// event lands at 8 PM Chennai time even when the phone/laptop is set to another zone.
+function zonedTimeToDate(dateStr, timeStr, tz){
+  var d = dateStr.split('-').map(Number), t = (timeStr||'00:00').split(':').map(Number);
+  var guess = Date.UTC(d[0], d[1]-1, d[2], t[0]||0, t[1]||0);
+  function offsetAt(ms){
+    try{
+      var parts = new Intl.DateTimeFormat('en-US',{timeZone:tz, hourCycle:'h23', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'}).formatToParts(new Date(ms));
+      var m = {}; parts.forEach(function(p){ m[p.type] = p.value; });
+      return Date.UTC(+m.year, +m.month-1, +m.day, +m.hour % 24, +m.minute, +m.second) - ms;
+    }catch(e){ return -new Date(ms).getTimezoneOffset()*60000; }
+  }
+  var ms = guess - offsetAt(guess);
+  ms = guess - offsetAt(ms); // second pass handles DST edges
+  return new Date(ms);
+}
+function calUtc(d){ return d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'; }
+function calDay(dateStr){ return dateStr.replace(/-/g,''); }
+function nextDay(dateStr){ var dt = new Date(dateStr+'T00:00:00Z'); dt.setUTCDate(dt.getUTCDate()+1); return dt.toISOString().slice(0,10); }
+
+// ev: {title, details, location, date, startTime, endTime} (timed or all-day) or {title, details, start:Date, end:Date}
+function calEventTimes(ev){
+  var cal = DB.settings.calendar || {};
+  if(ev.start) return {allDay:false, start:ev.start, end:ev.end || new Date(ev.start.getTime()+30*60000)};
+  if(!ev.startTime) return {allDay:true, startDay:ev.date, endDay:nextDay(ev.date)};
+  var tz = cal.timezone || browserTz();
+  var start = zonedTimeToDate(ev.date, ev.startTime, tz);
+  var end;
+  if(ev.endTime){
+    end = zonedTimeToDate(ev.date, ev.endTime, tz);
+    if(end <= start) end = new Date(end.getTime()+86400000); // finishes after midnight
+  } else end = new Date(start.getTime() + (Number(cal.defaultDurationHrs)||5)*3600000);
+  return {allDay:false, start:start, end:end};
+}
+function googleCalUrl(ev, classic){
+  var cal = DB.settings.calendar || {};
+  var t = calEventTimes(ev);
+  var dates = t.allDay ? calDay(t.startDay)+'/'+calDay(t.endDay) : calUtc(t.start)+'/'+calUtc(t.end);
+  var q = 'text='+encodeURIComponent(ev.title||'')+'&dates='+dates+
+    '&details='+encodeURIComponent(ev.details||'')+'&location='+encodeURIComponent(ev.location||'');
+  if(!t.allDay && cal.timezone) q += '&ctz='+encodeURIComponent(cal.timezone);
+  if(cal.account) q += '&authuser='+encodeURIComponent(cal.account);
+  return classic ? 'https://calendar.google.com/calendar/render?action=TEMPLATE&'+q
+                 : 'https://calendar.google.com/calendar/r/eventedit?'+q;
+}
+function icsText(ev){
+  var t = calEventTimes(ev);
+  function icsEsc(x){ return String(x||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/([,;])/g,'\\$1'); }
+  return [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ReY Events Manager//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:'+uid('EV')+'@rey-events',
+    'DTSTAMP:'+calUtc(new Date()),
+    t.allDay ? 'DTSTART;VALUE=DATE:'+calDay(t.startDay) : 'DTSTART:'+calUtc(t.start),
+    t.allDay ? 'DTEND;VALUE=DATE:'+calDay(t.endDay) : 'DTEND:'+calUtc(t.end),
+    'SUMMARY:'+icsEsc(ev.title),
+    'DESCRIPTION:'+icsEsc(ev.details),
+    'LOCATION:'+icsEsc(ev.location),
+    'END:VEVENT','END:VCALENDAR'
+  ].join('\r\n');
+}
+// Every "Add to calendar" button goes through here so the method chosen in More → Calendar applies everywhere.
+var CAL_PENDING = {};
+function calButton(ev, label, cls){
+  var key = uid('CAL'); CAL_PENDING[key] = ev;
+  return '<button type="button" class="'+(cls||'btn ghost sm')+'" onclick="openCalendar(\''+key+'\')">'+esc(label)+'</button>';
+}
+function openCalendar(key){ if(CAL_PENDING[key]) openCalendarEvent(CAL_PENDING[key]); }
+function openCalendarEvent(ev){
+  var method = (DB.settings.calendar||{}).method || 'google';
+  if(method==='ics'){
+    var fname = (ev.title||'event').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').slice(0,40) + '.ics';
+    withDownloads(function(downloads){
+      downloads.save({filename: fname, data: new Blob([icsText(ev)], {type:'text/calendar'})})
+        .then(function(){ toast('Calendar file saved — open it to add the event'); })
+        .catch(function(){ toast('Could not create the calendar file'); });
+    });
+  } else {
+    window.open(googleCalUrl(ev, method==='google-classic'), '_blank', 'noopener');
+  }
+  if(ev.bookingId){
+    var b = DB.bookings.find(function(x){return x.id===ev.bookingId;});
+    if(b && !b.calendarAdded){ b.calendarAdded = true; saveData(); }
+  }
+}
+function bookingCalEvent(b){
   var inq = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
   var details = [
     'Client: '+b.name+' ('+(b.phone||'no phone')+')',
     'Event type: '+b.eventType,
     'Location: '+(b.location||'—'),
+    (b.startTime ? 'Time: '+fmtTime(b.startTime)+(b.endTime?' – '+fmtTime(b.endTime):'') : ''),
     'Total amount: '+fmtMoney(b.totalAmount)+' | Advance: '+fmtMoney(b.advanceAmount)+' on '+fmtDate(b.advanceDate),
     'Booking date: '+fmtDate(b.bookingDate),
     inq ? ('Inquiry date: '+fmtDate(inq.inquiryDate)+' via '+inq.channel) : '',
     'Balance due: '+fmtMoney(balanceDue(b))
-  ].filter(Boolean).join('\\n');
-  var text = encodeURIComponent(b.eventType+' — '+b.name);
-  var loc = encodeURIComponent(b.location||'');
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text='+text+'&dates='+start+'/'+end+'&details='+encodeURIComponent(details)+'&location='+loc;
+  ].filter(Boolean).join('\n');
+  return {title: b.eventType+' — '+b.name, details: details, location: b.location||'',
+    date: b.eventDate, startTime: b.startTime||'', endTime: b.endTime||'', bookingId: b.id};
 }
-
-function followupCalendarLink(f, inquiryName){
+function calLabel(){ var m = (DB.settings.calendar||{}).method; return m==='ics' ? 'Add to phone calendar' : 'Add to Google Calendar'; }
+function followupCalEvent(f, inquiryName){
   var start = new Date(f.dueAt);
-  var end = new Date(start.getTime() + 30*60000);
-  function fmt(d){ return d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'; }
-  var text = encodeURIComponent('Follow up: '+(inquiryName||'Inquiry'));
-  var details = encodeURIComponent(f.note || 'Follow-up reminder from ReY Events Manager');
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text='+text+'&dates='+fmt(start)+'/'+fmt(end)+'&details='+details;
+  return {title:'Follow up: '+(inquiryName||'Inquiry'), details: f.note || 'Follow-up reminder from ReY Events Manager',
+    start: start, end: new Date(start.getTime()+30*60000)};
 }
 
 function openBookingDetail(id){
@@ -1521,13 +1677,15 @@ function openBookingDetail(id){
         '<div style="font-weight:700;font-size:16px;">'+esc(b.name)+'</div><span class="badge '+b.status+'">'+b.status+'</span>' +
       '</div>' +
       '<div class="kv"><span class="k">Event</span><span class="v">'+esc(b.eventType)+' · '+fmtDate(b.eventDate)+'</span></div>' +
+      (b.startTime ? '<div class="kv"><span class="k">Time</span><span class="v">'+fmtTime(b.startTime)+(b.endTime?' – '+fmtTime(b.endTime):'')+'</span></div>' : '') +
       '<div class="kv"><span class="k">Location</span><span class="v">'+esc(b.location||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Phone</span><span class="v">'+esc(b.phone||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Total</span><span class="v">'+fmtMoney(b.totalAmount)+'</span></div>' +
       '<div class="kv"><span class="k">Paid so far</span><span class="v" style="color:var(--good)">'+fmtMoney(paidSoFarAll(b))+'</span></div>' +
       '<div class="kv"><span class="k">Balance due</span><span class="v" style="color:'+(due>0?'var(--warn)':'var(--good)')+'">'+fmtMoney(due)+'</span></div>' +
     '</div>' +
-    '<button class="btn ghost" style="margin-bottom:14px;" onclick="window.open(\''+calendarLink(b)+'\',\'_blank\')">Add to Google Calendar</button>' +
+    '<div style="margin-bottom:14px;">'+calButton(bookingCalEvent(b), calLabel()+(b.calendarAdded?' again':''), 'btn ghost')+
+      (b.startTime ? '' : '<div class="hint" style="margin-top:6px;">No start time set, so this goes in as an all-day event. Tap Edit (top right) to add a time.</div>')+'</div>' +
     '<div class="section-title">Timeline</div>' +
     '<div class="card" style="margin-bottom:14px;">'+timeline+'</div>' +
     '<div class="section-title">Allocation</div>' +
@@ -1544,6 +1702,7 @@ function openBookingDetail(id){
       }).join('') : emptyState('No payments recorded','')) +
       (due>0 ? '<button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="openPaymentForm(\''+b.id+'\')">+ Add payment</button>' : '') +
     '</div>' +
+    bookingSpendCardHtml(b) +
     '<div class="section-title">Status</div>' +
     '<div class="btnrow">' +
       (b.status!=='completed' ? '<button class="btn ghost" onclick="setBookingStatus(\''+b.id+'\',\'completed\')">Mark completed</button>' : '') +
@@ -1551,9 +1710,40 @@ function openBookingDetail(id){
     '</div>';
 
   openSheet('Booking', body);
+  setSheetHeadExtra('<button class="btn ghost sm" onclick="openBookingEditForm(\''+b.id+'\')">Edit</button>');
   wireChips('bkEquip', false, function(){});
   wireChips('bkTransport', false, function(){});
   if(otherRes.length) wireChips('bkOther', true, function(){});
+}
+function openBookingEditForm(id){
+  var b = DB.bookings.find(function(x){return x.id===id;});
+  if(!b) return;
+  var body =
+    '<div class="field"><label>Event date</label><input type="date" id="beDate" value="'+esc(b.eventDate)+'"></div>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<div class="field" style="flex:1"><label>Start time</label><input type="time" id="beStart" value="'+esc(b.startTime||'')+'"></div>' +
+      '<div class="field" style="flex:1"><label>End time <span style="opacity:.6">(optional)</span></label><input type="time" id="beEnd" value="'+esc(b.endTime||'')+'"></div>' +
+    '</div>' +
+    '<div id="beConflict"></div>' +
+    '<div class="field"><label>Location</label><input type="text" id="beLoc" value="'+esc(b.location||'')+'"></div>' +
+    '<div class="field"><label>Total amount (₹)</label><input type="number" id="beTotal" value="'+(Number(b.totalAmount)||0)+'"></div>' +
+    '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="beNotes">'+esc(b.notes||'')+'</textarea></div>' +
+    (b.calendarAdded ? '<div class="hint" style="margin-bottom:10px;">Already added to your calendar? After changing the date or time, update or delete the old calendar entry and add it again.</div>' : '');
+  openSheet('Edit Booking', body, '<button class="btn primary" id="beSave">Save changes</button>');
+  function chk(){
+    var d = document.getElementById('beDate').value, c = d ? findConflictingBooking(d, b.id) : null;
+    document.getElementById('beConflict').innerHTML = c ? '<div class="modal warnbox" style="margin:0 0 16px;padding:11px 13px;">Already booked on '+fmtDate(d)+': <b>'+esc(c.name)+'</b>.</div>' : '';
+  }
+  document.getElementById('beDate').addEventListener('change', chk); chk();
+  document.getElementById('beSave').onclick = function(){
+    var d = document.getElementById('beDate').value, total = Number(document.getElementById('beTotal').value)||0;
+    if(!d){ toast('Pick the event date'); return; }
+    if(total<=0){ toast('Enter the total amount'); return; }
+    b.eventDate = d; b.startTime = document.getElementById('beStart').value; b.endTime = document.getElementById('beEnd').value;
+    b.location = document.getElementById('beLoc').value.trim(); b.totalAmount = total;
+    b.notes = document.getElementById('beNotes').value.trim(); b.updatedAt = nowIso();
+    saveData(); openBookingDetail(b.id); if(renderers[currentTab]) renderers[currentTab](); toast('Booking updated');
+  };
 }
 function resNameOrDefault(resId, list){
   var r = list.find(function(x){return x.id===resId;});
@@ -1606,6 +1796,234 @@ function cancelBooking(id){
     okText:'Cancel booking', danger:true,
     onOk:function(){ setBookingStatus(id,'cancelled'); toast('Booking cancelled'); }
   });
+}
+
+
+/* ================================ EXPENSES & PROFIT ================================ */
+function expenseTotal(list){ return list.reduce(function(s,e){return s+(Number(e.amount)||0);},0); }
+function bookingRevenue(b){ return b.status==='cancelled' ? 0 : (Number(b.totalAmount)||0); }
+function expensesFor(bookingId){ return DB.expenses.filter(function(e){return e.bookingId===bookingId;}); }
+function byTypeRows(list){
+  var map = {};
+  list.forEach(function(e){ var k = e.type||'Other'; map[k] = (map[k]||0) + (Number(e.amount)||0); });
+  return Object.keys(map).map(function(k){return {type:k, amount:map[k]};}).sort(function(a,b){return b.amount-a.amount;});
+}
+function profitColor(v){ return v>=0 ? 'var(--good)' : 'var(--bad)'; }
+function spendTotals(){
+  var active = DB.bookings.filter(function(b){return b.status!=='cancelled';});
+  var revenue = active.reduce(function(s,b){return s+(Number(b.totalAmount)||0);},0);
+  var collected = active.reduce(function(s,b){return s+paidSoFarAll(b);},0);
+  var total = expenseTotal(DB.expenses);
+  var eventSpend = expenseTotal(DB.expenses.filter(function(e){return e.bookingId;}));
+  return {revenue:revenue, collected:collected, total:total, eventSpend:eventSpend, general:total-eventSpend,
+    profit:revenue-total, cashProfit:collected-total, margin: revenue>0 ? (revenue-total)/revenue*100 : 0};
+}
+function typeBreakdownHtml(list){
+  var rows = byTypeRows(list);
+  if(!rows.length) return emptyState('No expenses yet','');
+  var max = rows[0].amount || 1;
+  return rows.map(function(r){
+    return '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:13px;"><span style="font-weight:600">'+esc(r.type)+'</span>' +
+      '<span class="num" style="font-weight:700">'+fmtMoney(r.amount)+'</span></div>' +
+      '<div class="segbar"><i style="width:'+clamp(r.amount/max*100,2,100)+'%;background:var(--warn)"></i></div></div>';
+  }).join('');
+}
+function expenseRow(e, ctx){
+  var b = e.bookingId ? DB.bookings.find(function(x){return x.id===e.bookingId;}) : null;
+  var sub = fmtDateShort(e.date) + ' · ' + (b ? esc(b.name)+' ('+esc(b.eventType)+')' : 'General') + (e.note ? ' · '+esc(e.note) : '');
+  return '<div class="list-row" style="cursor:pointer;" onclick="openExpenseForm(\''+e.id+'\',null,\''+(ctx||'')+'\')">' +
+    '<div class="avatar">'+esc(initials(e.type||'?'))+'</div>' +
+    '<div class="row-main"><div class="row-title">'+esc(e.type||'Expense')+'</div><div class="row-sub">'+sub+'</div></div>' +
+    '<div class="row-end"><div class="row-amt num">'+fmtMoney(e.amount)+'</div></div>' +
+  '</div>';
+}
+
+var expenseFilter = 'All';
+function renderExpenses(){
+  var el = document.getElementById('view-expenses');
+  var all = DB.expenses.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||'') || (b.createdAt||'').localeCompare(a.createdAt||''); });
+  var usedTypes = [];
+  all.forEach(function(e){ if(usedTypes.indexOf(e.type)===-1) usedTypes.push(e.type); });
+  if(expenseFilter!=='All' && usedTypes.indexOf(expenseFilter)===-1) expenseFilter = 'All';
+  var list = expenseFilter==='All' ? all : all.filter(function(e){return e.type===expenseFilter;});
+  var month = todayStr().slice(0,7);
+  var monthTotal = expenseTotal(DB.expenses.filter(function(e){return (e.date||'').slice(0,7)===month;}));
+  var t = spendTotals();
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+      '<h2 class="disp" style="margin:0;">Expenses</h2>' +
+      '<button class="btn primary sm" onclick="openExpenseForm()">+ Add</button></div>' +
+    '<div class="tiles" style="margin-bottom:14px;">' +
+      '<div class="tile" onclick="openSpendSummary()" style="cursor:pointer;"><div class="tlabel">Total spend</div><div class="tval num">'+fmtMoney(t.total)+'</div><div class="tsub">tap for summary</div></div>' +
+      '<div class="tile"><div class="tlabel">This month</div><div class="tval num">'+fmtMoney(monthTotal)+'</div><div class="tsub">'+new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric'})+'</div></div>' +
+    '</div>' +
+    (usedTypes.length>1 ? '<div class="chipwrap" id="exFilterChips" style="margin-bottom:14px;">' +
+      ['All'].concat(usedTypes).map(function(f){
+        return '<button class="chip'+(expenseFilter===f?' sel':'')+'" data-f="'+esc(f)+'">'+esc(f)+'</button>';
+      }).join('') + '</div>' : '') +
+    '<div class="card" style="padding:6px 10px;margin-bottom:10px;">' +
+      (list.length ? list.map(function(e){return expenseRow(e,'');}).join('') +
+        '<div class="kv" style="margin-top:6px;"><span class="k">'+list.length+' expense(s)</span><span class="v">'+fmtMoney(expenseTotal(list))+'</span></div>'
+        : emptyState('No expenses yet','Tap + Add to record salary, fuel, rentals or anything else.')) +
+    '</div>' +
+    '<div class="linkrow" onclick="openExpenseTypes()"><span>Manage expense types</span><svg viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+  el.querySelectorAll('#exFilterChips .chip').forEach(function(btn){
+    btn.onclick = function(){ expenseFilter = btn.dataset.f; renderExpenses(); };
+  });
+}
+renderers.expenses = renderExpenses;
+
+// ctx: '' = back to current tab, 'event' = back to that event's spend summary, 'booking' = back to booking detail
+function openExpenseForm(id, presetBookingId, ctx){
+  var e = id ? DB.expenses.find(function(x){return x.id===id;}) : null;
+  if(id && !e) return;
+  var types = DB.settings.expenseTypes.slice();
+  if(e && e.type && types.indexOf(e.type)===-1) types.push(e.type);
+  var bookingId = e ? (e.bookingId||'') : (presetBookingId||'');
+  if(!ctx && presetBookingId) ctx = 'event';
+  var bookings = DB.bookings.filter(function(b){return b.status!=='cancelled' || b.id===bookingId;}).slice().sort(byEventDateDesc);
+  var opts = '<option value="">General — not for a specific event</option>' + bookings.map(function(b){
+    return '<option value="'+b.id+'"'+(b.id===bookingId?' selected':'')+'>'+esc(fmtDateShort(b.eventDate)+' · '+b.name+' · '+b.eventType)+'</option>';
+  }).join('');
+  var body =
+    '<div class="field"><label>Expense type</label>' + chips('xType', types.concat([NEW_TYPE_CHIP]), e ? e.type : '') +
+      otherBox('xTypeNew', 'Name the new type, e.g. Decor', false) + '</div>' +
+    '<div class="field"><label>Amount (₹)</label><input type="number" id="xAmt" inputmode="decimal" value="'+(e?Number(e.amount)||'':'')+'" placeholder="e.g. 2500"></div>' +
+    '<div class="field"><label>Date</label><input type="date" id="xDate" value="'+esc(e?e.date:todayStr())+'"></div>' +
+    '<div class="field"><label>For event</label><select id="xBooking">'+opts+'</select></div>' +
+    '<div class="field"><label>Paid to / notes <span style="opacity:.6">(optional)</span></label><input type="text" id="xNote" value="'+esc(e?e.note:'')+'" placeholder="e.g. Ravi — sound tech"></div>';
+  var foot = (e ? '<div class="btnrow"><button class="btn danger" id="xDelBtn">Delete</button><button class="btn primary" id="xSaveBtn">Save changes</button></div>'
+                : '<button class="btn primary" id="xSaveBtn">Add expense</button>');
+  openSheet(e ? 'Edit Expense' : 'Add Expense', body, foot);
+  wireChips('xType', false, function(){});
+  wireOtherBox('xType', 'xTypeNew', [NEW_TYPE_CHIP]);
+  function back(bid){
+    if(ctx==='event' && bid) openEventSpend(bid);
+    else if(ctx==='booking' && bid) openBookingDetail(bid);
+    else if(ctx==='summary') openSpendSummary();
+    else closeSheet();
+    if(renderers[currentTab]) renderers[currentTab]();
+  }
+  document.getElementById('xSaveBtn').onclick = function(){
+    var type = getChipValue('xType', false);
+    if(type===NEW_TYPE_CHIP){
+      type = document.getElementById('xTypeNew').value.trim();
+      if(!type){ toast('Name the new expense type'); return; }
+      var existing = DB.settings.expenseTypes.find(function(t){return t.toLowerCase()===type.toLowerCase();});
+      if(existing) type = existing; else DB.settings.expenseTypes.push(type);
+    }
+    if(!type){ toast('Pick an expense type'); return; }
+    var amt = Number(document.getElementById('xAmt').value)||0;
+    if(amt<=0){ toast('Enter the amount'); return; }
+    var rec = e || {id:uid('EXP'), createdAt:nowIso()};
+    rec.type = type; rec.amount = amt; rec.date = document.getElementById('xDate').value || todayStr();
+    rec.bookingId = document.getElementById('xBooking').value || null;
+    rec.note = document.getElementById('xNote').value.trim();
+    if(e) rec.updatedAt = nowIso(); else DB.expenses.push(rec);
+    saveData(); back(rec.bookingId || bookingId); toast(e ? 'Expense updated' : 'Expense added');
+  };
+  if(e) document.getElementById('xDelBtn').onclick = function(){
+    confirmModal({title:'Delete this expense?', message:fmtMoney(e.amount)+' — '+e.type+' on '+fmtDate(e.date)+'.', okText:'Delete', danger:true,
+      onOk:function(){ DB.expenses = DB.expenses.filter(function(x){return x.id!==e.id;}); saveData(); back(e.bookingId); toast('Expense deleted'); }});
+  };
+}
+
+function openExpenseTypes(){
+  var types = DB.settings.expenseTypes;
+  var body =
+    '<div class="hint" style="margin-bottom:12px;">These show as choices when you add an expense. You can also create a type on the spot from the expense form. Removing a type here keeps any expenses already recorded under it.</div>' +
+    '<div class="card" style="padding:6px 10px;margin-bottom:14px;">' +
+      (types.length ? types.map(function(t, idx){
+        var used = DB.expenses.filter(function(e){return e.type===t;}).length;
+        return '<div class="list-row"><div class="row-main"><div class="row-title">'+esc(t)+'</div><div class="row-sub">'+(used?used+' expense(s)':'not used yet')+'</div></div>' +
+          '<button class="iconbtn" aria-label="Remove" onclick="removeExpenseType('+idx+')"><svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>';
+      }).join('') : emptyState('No types yet','Add one below.')) +
+    '</div>' +
+    '<div class="field"><label>New expense type</label><input type="text" id="xtNew" placeholder="e.g. Decor, Venue fee, Tolls"></div>';
+  openSheet('Expense Types', body, '<button class="btn primary" id="xtAdd">Add type</button>');
+  document.getElementById('xtAdd').onclick = function(){
+    var v = document.getElementById('xtNew').value.trim();
+    if(!v){ toast('Type a name first'); return; }
+    if(DB.settings.expenseTypes.some(function(t){return t.toLowerCase()===v.toLowerCase();})){ toast('That type already exists'); return; }
+    DB.settings.expenseTypes.push(v); saveData(); openExpenseTypes(); toast('Type added');
+  };
+}
+function removeExpenseType(idx){
+  var t = DB.settings.expenseTypes[idx]; if(t==null) return;
+  DB.settings.expenseTypes.splice(idx,1); saveData(); openExpenseTypes();
+  if(renderers[currentTab]) renderers[currentTab](); toast('"'+t+'" removed');
+}
+
+/* ---- Overall spend summary → per-event list → per-event summary ---- */
+function openSpendSummary(){
+  var t = spendTotals();
+  var events = DB.bookings.filter(function(b){ return b.status!=='cancelled' || expensesFor(b.id).length; }).slice().sort(byEventDateDesc);
+  var rows = events.map(function(b){
+    var spend = expenseTotal(expensesFor(b.id)), rev = bookingRevenue(b), pr = rev - spend;
+    return '<tr onclick="openEventSpend(\''+b.id+'\')">' +
+      '<td>'+fmtDateShort(b.eventDate)+'</td><td>'+esc(b.name)+(b.status==='cancelled'?' <span class="badge cancelled">cancelled</span>':'')+'</td><td>'+esc(b.eventType)+'</td>' +
+      '<td class="num">'+fmtMoney(rev)+'</td><td class="num">'+fmtMoney(spend)+'</td>' +
+      '<td class="num" style="color:'+profitColor(pr)+';font-weight:700">'+fmtMoney(pr)+'</td></tr>';
+  }).join('');
+  var evRev = events.reduce(function(s,b){return s+bookingRevenue(b);},0);
+  var body =
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div class="kv"><span class="k">Revenue (active bookings)</span><span class="v">'+fmtMoney(t.revenue)+'</span></div>' +
+      '<div class="kv"><span class="k">Collected so far</span><span class="v" style="color:var(--good)">'+fmtMoney(t.collected)+'</span></div>' +
+      '<div class="kv"><span class="k">Event expenses</span><span class="v">'+fmtMoney(t.eventSpend)+'</span></div>' +
+      '<div class="kv"><span class="k">General expenses (salary, overheads…)</span><span class="v">'+fmtMoney(t.general)+'</span></div>' +
+      '<div class="kv"><span class="k"><b>Total expenses</b></span><span class="v" style="color:var(--warn)">'+fmtMoney(t.total)+'</span></div>' +
+      '<div class="kv"><span class="k"><b>Profit after expenses</b></span><span class="v" style="color:'+profitColor(t.profit)+'">'+fmtMoney(t.profit)+(t.revenue>0?' ('+t.margin.toFixed(0)+'%)':'')+'</span></div>' +
+      '<div class="kv"><span class="k">Cash profit (collected − expenses)</span><span class="v" style="color:'+profitColor(t.cashProfit)+'">'+fmtMoney(t.cashProfit)+'</span></div>' +
+    '</div>' +
+    '<div class="section-title">Spend by type</div>' +
+    '<div class="card" style="margin-bottom:14px;">'+typeBreakdownHtml(DB.expenses)+'</div>' +
+    '<div class="section-title">Per-event summary <span style="opacity:.6;text-transform:none;font-weight:600;">— tap an event</span></div>' +
+    (events.length ? '<div style="overflow-x:auto;margin-bottom:14px;"><table class="dtable"><thead><tr>' +
+      '<th>Date</th><th>Client</th><th>Event</th><th class="num">Revenue</th><th class="num">Spend</th><th class="num">Profit</th>' +
+      '</tr></thead><tbody>'+rows+'</tbody>' +
+      '<tfoot><tr><td colspan="6">'+events.length+' event(s) &middot; Revenue '+fmtMoney(evRev)+' &middot; Event spend '+fmtMoney(t.eventSpend)+' &middot; Profit before general expenses '+fmtMoney(evRev-t.eventSpend)+'</td></tr></tfoot>' +
+      '</table></div>' : emptyState('No bookings yet','')) +
+    '<div class="hint">Profit = revenue from active bookings minus every expense (event and general). Per-event profit only subtracts expenses linked to that event.</div>';
+  openSheet('Spend Summary', body, '<button class="btn primary" onclick="openExpenseForm(null,null,\'summary\')">+ Add expense</button>');
+}
+function openEventSpend(bookingId){
+  var b = DB.bookings.find(function(x){return x.id===bookingId;});
+  if(!b) return;
+  var list = expensesFor(b.id).sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
+  var spend = expenseTotal(list), rev = bookingRevenue(b), pr = rev - spend;
+  var body =
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+        '<div style="font-weight:700;font-size:16px;">'+esc(b.name)+'</div><span class="badge '+b.status+'">'+b.status+'</span></div>' +
+      '<div class="kv"><span class="k">Event</span><span class="v">'+esc(b.eventType)+' · '+fmtDate(b.eventDate)+'</span></div>' +
+      '<div class="kv"><span class="k">Revenue</span><span class="v">'+fmtMoney(rev)+'</span></div>' +
+      '<div class="kv"><span class="k">Collected</span><span class="v" style="color:var(--good)">'+fmtMoney(paidSoFarAll(b))+'</span></div>' +
+      '<div class="kv"><span class="k">Balance due</span><span class="v">'+fmtMoney(balanceDue(b))+'</span></div>' +
+      '<div class="kv"><span class="k"><b>Expenses</b></span><span class="v" style="color:var(--warn)">'+fmtMoney(spend)+'</span></div>' +
+      '<div class="kv"><span class="k"><b>Profit</b></span><span class="v" style="color:'+profitColor(pr)+'">'+fmtMoney(pr)+(rev>0?' ('+(pr/rev*100).toFixed(0)+'%)':'')+'</span></div>' +
+    '</div>' +
+    '<div class="section-title">Spend by type</div>' +
+    '<div class="card" style="margin-bottom:14px;">'+typeBreakdownHtml(list)+'</div>' +
+    '<div class="section-title">Expenses for this event</div>' +
+    '<div class="card" style="padding:6px 10px;margin-bottom:14px;">' +
+      (list.length ? list.map(function(e){return expenseRow(e,'event');}).join('') : emptyState('Nothing recorded yet','Add crew wages, fuel, food or any other cost for this event.')) +
+    '</div>' +
+    '<button class="btn ghost" style="margin-bottom:10px;" onclick="openBookingDetail(\''+b.id+'\')">Open booking</button>';
+  openSheet('Event Spend', body, '<button class="btn primary" onclick="openExpenseForm(null,\''+b.id+'\',\'event\')">+ Add expense for this event</button>');
+  setSheetHeadExtra('<button class="btn ghost sm" onclick="openSpendSummary()">All events</button>');
+}
+function bookingSpendCardHtml(b){
+  var spend = expenseTotal(expensesFor(b.id)), pr = bookingRevenue(b) - spend;
+  return '<div class="section-title">Spend &amp; profit</div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div class="kv"><span class="k">Expenses for this event</span><span class="v" style="color:var(--warn)">'+fmtMoney(spend)+'</span></div>' +
+      '<div class="kv"><span class="k">Profit</span><span class="v" style="color:'+profitColor(pr)+'">'+fmtMoney(pr)+'</span></div>' +
+      '<div class="btnrow" style="margin-top:10px;">' +
+        '<button class="btn ghost sm" onclick="openEventSpend(\''+b.id+'\')">Spend summary</button>' +
+        '<button class="btn ghost sm" onclick="openExpenseForm(null,\''+b.id+'\',\'booking\')">+ Add expense</button>' +
+      '</div>' +
+    '</div>';
 }
 
 /* ================================ RESOURCES ================================ */
@@ -1759,6 +2177,7 @@ function renderMore(){
       '</div></div>';
   }).join('');
 
+  setTimeout(function(){ if(document.getElementById('calMethod')) wireChips('calMethod', false, function(){}); }, 0);
   el.innerHTML =
     '<h2 class="disp" style="margin:2px 0 12px;">More</h2>' +
     '<div class="section-title">Business</div>' +
@@ -1785,6 +2204,12 @@ function renderMore(){
     '<div class="card" style="margin-bottom:14px;">' + allocRows +
       '<div class="hint" style="margin-bottom:10px;">These equipment/transport cost estimates are suggested automatically when you convert an inquiry to a booking for that event type. Change the numbers above and save — it only affects new bookings, not ones already saved.</div>' +
       '<button class="btn ghost sm" style="width:100%" onclick="saveAllocSettings()">Save allocation</button>' +
+    '</div>' +
+    calendarSettingsHtml() +
+    '<div class="section-title">Expenses</div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div class="linkrow" onclick="openExpenseTypes()"><span>Expense types ('+DB.settings.expenseTypes.length+')</span><svg viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' +
+      '<div class="linkrow" onclick="openSpendSummary()"><span>Spend &amp; profit summary</span><svg viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' +
     '</div>' +
     '<div class="section-title">Backup &amp; restore</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
@@ -1820,6 +2245,39 @@ function renderMore(){
     '</div>' +
     '<div class="hint" style="text-align:center;">ReY Events Manager · data saved securely online</div>';
   loadAdminCounts();
+}
+function calendarSettingsHtml(){
+  var c = DB.settings.calendar;
+  var tzs = [];
+  try{ if(Intl.supportedValuesOf) tzs = Intl.supportedValuesOf('timeZone'); }catch(e){}
+  ['Asia/Kolkata','Europe/London', browserTz()].forEach(function(z){ if(tzs.indexOf(z)===-1) tzs.unshift(z); });
+  if(c.timezone && tzs.indexOf(c.timezone)===-1) tzs.unshift(c.timezone);
+  return '<div class="section-title">Calendar</div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div class="field" style="margin-bottom:12px;"><label>Add events using</label>' + chips('calMethod', CAL_METHODS.map(function(m){return m.label;}), (CAL_METHODS.find(function(m){return m.key===c.method;})||CAL_METHODS[0]).label) + '</div>' +
+      '<div class="field" style="margin-bottom:12px;"><label>Google account email <span style="opacity:.6">(optional)</span></label><input type="text" id="calAccount" placeholder="you@gmail.com" value="'+esc(c.account||'')+'"></div>' +
+      '<div class="field" style="margin-bottom:12px;"><label>Event times are in</label><select id="calTz">'+tzs.map(function(z){return '<option'+(z===c.timezone?' selected':'')+'>'+esc(z)+'</option>';}).join('')+'</select></div>' +
+      '<div class="field" style="margin-bottom:8px;"><label>Default event length when no end time (hours)</label><input type="number" id="calDur" min="1" max="24" value="'+(Number(c.defaultDurationHrs)||5)+'"></div>' +
+      '<div class="hint" style="margin-bottom:10px;">Bookings open in your calendar on their own date and start time, ready for you to confirm. If you use more than one Google account, enter the one to add events to. If Google opens on today\'s date on your phone, switch to the classic link, or to the phone calendar file (best on iPhone). Use the test button to check.</div>' +
+      '<div class="btnrow"><button class="btn ghost sm" onclick="testCalendar()">Test with tomorrow 7 PM</button><button class="btn ghost sm" onclick="saveCalendarSettings()">Save</button></div>' +
+    '</div>';
+}
+function readCalendarSettings(){
+  var c = DB.settings.calendar;
+  if(document.getElementById('calMethod')){
+    var lbl = getChipValue('calMethod', false), m = CAL_METHODS.find(function(x){return x.label===lbl;});
+    if(m) c.method = m.key;
+    c.account = document.getElementById('calAccount').value.trim();
+    c.timezone = document.getElementById('calTz').value || browserTz();
+    c.defaultDurationHrs = clamp(Number(document.getElementById('calDur').value)||5, 1, 24);
+  }
+}
+function saveCalendarSettings(){ readCalendarSettings(); saveData(); toast('Calendar settings saved'); }
+function testCalendar(){
+  readCalendarSettings(); saveData();
+  var d = new Date(); d.setDate(d.getDate()+1);
+  openCalendarEvent({title:'Test — ReY Events calendar link', details:'If this shows tomorrow at 7:00 PM, your calendar setup works. You can discard it.',
+    date: localDateTimeStr(d).slice(0,10), startTime:'19:00', endTime:'20:00'});
 }
 function capitalField(key, label, val){
   return '<div class="field" style="margin-bottom:10px;"><label>'+esc(label)+'</label><input type="number" id="s_'+key+'" value="'+(val==null?'':val)+'"></div>';
@@ -1858,7 +2316,8 @@ function clearSampleData(){
   var count = DB.inquiries.filter(function(x){return x.sample;}).length +
     DB.followups.filter(function(x){return x.sample;}).length +
     DB.bookings.filter(function(x){return x.sample;}).length +
-    DB.resources.filter(function(x){return x.sample;}).length;
+    DB.resources.filter(function(x){return x.sample;}).length +
+    DB.expenses.filter(function(x){return x.sample;}).length;
   if(count===0){ toast('No sample data left to clear'); return; }
   confirmModal({
     title:'Clear sample data?', message:'Removes the '+count+' example inquiries, followups, bookings and resources created when you first set up the app. Anything you have added or edited yourself stays.',
@@ -1868,6 +2327,7 @@ function clearSampleData(){
       DB.followups = DB.followups.filter(function(x){return !x.sample;});
       DB.bookings = DB.bookings.filter(function(x){return !x.sample;});
       DB.resources = DB.resources.filter(function(x){return !x.sample;});
+      DB.expenses = DB.expenses.filter(function(x){return !x.sample;});
       saveData();
       if(renderers[currentTab]) renderers[currentTab]();
       toast('Sample data cleared');
@@ -1876,7 +2336,7 @@ function clearSampleData(){
 }
 function resetAppFromMore(){
   confirmModal({
-    title:'Erase everything?', warn:'This permanently deletes ALL inquiries, follow-ups, bookings, payments and resources in '+(VIEW_USER ? VIEW_USER.username+'\'s' : 'this')+' account. The login itself stays.',
+    title:'Erase everything?', warn:'This permanently deletes ALL inquiries, follow-ups, bookings, payments, expenses and resources in '+(VIEW_USER ? VIEW_USER.username+'\'s' : 'this')+' account. The login itself stays.',
     message:'Make sure you have exported a backup first if you want to keep anything.', okText:'Erase everything', danger:true,
     onOk:function(){
       var owner = DB.settings.ownerName;
@@ -1940,7 +2400,7 @@ function exportExcelBackup(){
     return {
       'ID': i.id, 'Created At': i.createdAt,
       'Inquiry Date': i.inquiryDate, 'Client Name': i.name, 'Phone': String(i.phone||''), 'Alternate Phone': String(i.altPhone||''),
-      'Email': i.email||'', 'Location': i.location, 'Event Type': i.eventType, 'Event Date': i.eventDate,
+      'Email': i.email||'', 'Location': i.location, 'Event Type': i.eventType, 'Event Date': i.eventDate, 'Event Time': i.eventTime||'',
       'Channel': i.channel, 'Inquiry Type': i.inquiryType, 'Status': i.status, 'Notes': i.notes||''
     };
   });
@@ -1966,7 +2426,8 @@ function exportExcelBackup(){
       'Transport ID': b.transportResourceId||'', 'Transport': resourceName(b.transportResourceId),
       'Extra Resource IDs': (b.extraResourceIds||[]).join(','),
       'Extra Resources': (b.extraResourceIds||[]).map(resourceName).filter(Boolean).join(', '),
-      'Status': b.status, 'Added to Calendar': b.calendarAdded ? 'Yes' : 'No', 'Notes': b.notes||''
+      'Status': b.status, 'Added to Calendar': b.calendarAdded ? 'Yes' : 'No', 'Notes': b.notes||'',
+      'Start Time': b.startTime||'', 'End Time': b.endTime||'', 'Expenses': expenseTotal(expensesFor(b.id)), 'Profit': bookingRevenue(b) - expenseTotal(expensesFor(b.id))
     };
   });
 
@@ -1981,6 +2442,11 @@ function exportExcelBackup(){
     });
   });
 
+  var expenseRows = DB.expenses.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');}).map(function(e){
+    var b = e.bookingId ? DB.bookings.find(function(x){return x.id===e.bookingId;}) : null;
+    return {'ID': e.id, 'Booking ID': e.bookingId||'', 'Created At': e.createdAt||'', 'Date': e.date, 'Type': e.type, 'Amount': Number(e.amount)||0,
+      'Event': b ? (b.name+' — '+b.eventType+' ('+b.eventDate+')') : 'General', 'Notes': e.note||''};
+  });
   var resourceRows = DB.resources.map(function(r){
     return { 'ID': r.id, 'Created At': r.createdAt, 'Type': r.type, 'Name': r.name, 'Notes': r.notes||'', 'Active': r.active ? 'Yes' : 'No' };
   });
@@ -1997,6 +2463,8 @@ function exportExcelBackup(){
     ['Total inquiries', DB.inquiries.length],
     ['Total active bookings', activeBookings.length],
     ['Total revenue (active bookings)', totalRevenue],
+    ['Total expenses', expenseTotal(DB.expenses)],
+    ['Profit after expenses', totalRevenue - expenseTotal(DB.expenses)],
     ['Inquiry → booking conversion', (health.convRate*100).toFixed(1)+'%'],
     ['Business health score (0-100)', health.total],
     ['', ''],
@@ -2028,7 +2496,9 @@ function exportExcelBackup(){
     ['transportTotalInvestment', Number(s.transportTotalInvestment)||0],
     ['transportCycleYears', Number(s.transportCycleYears)||0],
     ['transportAcquiredYear', Number(s.transportAcquiredYear)||''],
-    ['transportAlreadyRecovered', Number(s.transportAlreadyRecovered)||0]
+    ['transportAlreadyRecovered', Number(s.transportAlreadyRecovered)||0],
+    ['expenseTypes', JSON.stringify(s.expenseTypes||[])],
+    ['calendar', JSON.stringify(s.calendar||{})]
   ];
   var allocRows = [['eventType','equip','transport']].concat(
     Object.keys(s.eventTypeAlloc).map(function(et){
@@ -2043,7 +2513,7 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
   var wsInq = XLSX.utils.json_to_sheet(inquiriesRows);
-  wsInq['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:16},{wch:12},{wch:18},{wch:13},{wch:10},{wch:30}];
+  wsInq['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:16},{wch:12},{wch:10},{wch:18},{wch:13},{wch:10},{wch:30}];
   XLSX.utils.book_append_sheet(wb, wsInq, 'Inquiries');
 
   var wsFu = XLSX.utils.json_to_sheet(followupRows);
@@ -2051,12 +2521,17 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsFu, 'Follow-ups');
 
   var wsBk = XLSX.utils.json_to_sheet(bookingsRows);
-  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30}];
+  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb, wsBk, 'Bookings');
 
   var wsPay = XLSX.utils.json_to_sheet(paymentsRows);
   wsPay['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:20},{wch:12},{wch:12},{wch:10},{wch:12},{wch:26}];
   XLSX.utils.book_append_sheet(wb, wsPay, 'Payments');
+
+  var wsExp = expenseRows.length ? XLSX.utils.json_to_sheet(expenseRows)
+    : XLSX.utils.aoa_to_sheet([['ID','Booking ID','Created At','Date','Type','Amount','Event','Notes']]);
+  wsExp['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:18},{wch:10},{wch:34},{wch:26}];
+  XLSX.utils.book_append_sheet(wb, wsExp, 'Expenses');
 
   var wsRes = XLSX.utils.json_to_sheet(resourceRows);
   wsRes['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:26},{wch:8}];
@@ -2144,7 +2619,7 @@ function restoreFromExcelFile(file){
         return {
           id:String(r['ID']), createdAt:r['Created At']||nowIso(), inquiryDate:r['Inquiry Date']||todayStr(),
           name:r['Client Name']||'', phone:String(r['Phone']||''), altPhone:String(r['Alternate Phone']||''),
-          email:r['Email']||'', location:r['Location']||'', eventType:r['Event Type']||'', eventDate:r['Event Date']||'',
+          email:r['Email']||'', location:r['Location']||'', eventType:r['Event Type']||'', eventDate:r['Event Date']||'', eventTime:String(r['Event Time']||''),
           channel:r['Channel']||'', inquiryType:r['Inquiry Type']||'New Client', status:r['Status']||'open', notes:r['Notes']||''
         };
       });
@@ -2166,7 +2641,8 @@ function restoreFromExcelFile(file){
           equipmentResourceId: r['Equipment ID'] ? String(r['Equipment ID']) : null,
           transportResourceId: r['Transport ID'] ? String(r['Transport ID']) : null,
           extraResourceIds: r['Extra Resource IDs'] ? String(r['Extra Resource IDs']).split(',').map(function(x){return x.trim();}).filter(Boolean) : [],
-          status:r['Status']||'confirmed', calendarAdded: r['Added to Calendar']==='Yes', notes:r['Notes']||'', payments:[]
+          status:r['Status']||'confirmed', calendarAdded: r['Added to Calendar']==='Yes', notes:r['Notes']||'', payments:[],
+          startTime:String(r['Start Time']||''), endTime:String(r['End Time']||'')
         };
       });
       payRows.forEach(function(r){
@@ -2174,9 +2650,14 @@ function restoreFromExcelFile(file){
         if(b) b.payments.push({id:String(r['ID']||uid('PAY')), amount:Number(r['Amount'])||0, date:r['Payment Date']||'', method:r['Method']||'', note:r['Note']||''});
       });
 
+      var expenses = wb.SheetNames.indexOf('Expenses')>-1 ? rows('Expenses').filter(function(r){return r['ID'];}).map(function(r){
+        return {id:String(r['ID']), bookingId: r['Booking ID'] ? String(r['Booking ID']) : null, createdAt:r['Created At']||nowIso(),
+          date:r['Date']||todayStr(), type:r['Type']||'Miscellaneous', amount:Number(r['Amount'])||0, note:r['Notes']||''};
+      }) : [];
+      function jsonSetting(k, fallback){ try{ return settingsMap[k] ? JSON.parse(settingsMap[k]) : fallback; }catch(e){ return fallback; } }
       var incoming = {
         createdAt: settingsMap.dbCreatedAt || nowIso(),
-        inquiries: inquiries, followups: followups, bookings: bookings, resources: resources,
+        inquiries: inquiries, followups: followups, bookings: bookings, resources: resources, expenses: expenses,
         settings: {
           businessName: settingsMap.businessName || 'ReY Events', ownerName: settingsMap.ownerName || '',
           equipmentTotalInvestment: Number(settingsMap.equipmentTotalInvestment)||800000,
@@ -2188,7 +2669,9 @@ function restoreFromExcelFile(file){
           transportAcquiredYear: Number(settingsMap.transportAcquiredYear)||2024,
           transportAlreadyRecovered: Number(settingsMap.transportAlreadyRecovered)||0,
           eventTypeAlloc: Object.keys(eventTypeAlloc).length ? eventTypeAlloc : JSON.parse(JSON.stringify(DEFAULT_ALLOC)),
-          notifPermAsked: false
+          notifPermAsked: false,
+          expenseTypes: jsonSetting('expenseTypes', DEFAULT_EXPENSE_TYPES.slice()),
+          calendar: jsonSetting('calendar', DB.settings.calendar)
         }
       };
 
@@ -2260,6 +2743,10 @@ window.exportExcelBackup = exportExcelBackup;
 window.restoreFromFile = restoreFromFile; window.restoreFromExcelFile = restoreFromExcelFile; window.closeSheet = closeSheet; window.setBookingFilter = setBookingFilter;
 window.openTileDetail = openTileDetail;
 window.openSearchSheet = openSearchSheet;
+window.fabAction = fabAction; window.editInquiry = editInquiry; window.openBookingEditForm = openBookingEditForm;
+window.openCalendar = openCalendar; window.testCalendar = testCalendar; window.saveCalendarSettings = saveCalendarSettings;
+window.openExpenseForm = openExpenseForm; window.openExpenseTypes = openExpenseTypes; window.removeExpenseType = removeExpenseType;
+window.openSpendSummary = openSpendSummary; window.openEventSpend = openEventSpend;
 
 document.addEventListener('DOMContentLoaded', init);
 if(document.readyState==='complete' || document.readyState==='interactive') setTimeout(init, 0);

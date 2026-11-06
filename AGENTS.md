@@ -17,6 +17,8 @@ Multi-user port of a single-file offline app ("ReY Events Manager"). The UI must
 - `db/schema.ts`: Drizzle schema. Migrations go in `netlify/database/migrations/`.
 
 ## Key decisions
+- **Expenses** live in `DB.expenses` ({id, type, amount, date, bookingId|null, note}); types in `DB.settings.expenseTypes`. Profit = active-booking revenue − all expenses; per-event profit subtracts only that booking's expenses.
+- **Calendar**: `DB.settings.calendar` {method: google | google-classic | ics, account, timezone, defaultDurationHrs}. Booking times are wall-clock in that timezone and converted to UTC (`zonedTimeToDate`) for links/.ics. All add-to-calendar buttons go through `calButton`/`openCalendarEvent`.
 - **One JSON document per user** (`workspaces.data`) holds the same `DB` object the original app kept in localStorage. `saveData()` keeps its old name and call sites but now debounces a PUT to `/api/data`. Writes carry `version`. On a mismatch the server returns 409 with the latest copy, and the client swaps it in.
 - **Login is by username or email.** The server maps username → email and calls Identity `login()`, which sets the `nf_jwt` cookie. Functions read it with `getUser()`.
 - **Admin** = profile with `role='admin'`. It is assigned automatically to the email in `ADMIN_EMAIL` (default `dj.events.mgr.1980@gmail.com`). Email confirmation must stay ON in Identity settings so nobody else can claim that address.

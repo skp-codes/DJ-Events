@@ -123,7 +123,7 @@
   /* forms */
   .field{margin-bottom:16px;}
   .field label{display:block; font-size:12.5px; font-weight:700; color:var(--ink-dim); margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em;}
-  .field input[type=text],.field input[type=tel],.field input[type=email],.field input[type=number],.field input[type=date],.field input[type=datetime-local],.field input[type=password],.field textarea,.field select{
+  .field input[type=text],.field input[type=tel],.field input[type=email],.field input[type=number],.field input[type=date],.field input[type=datetime-local],.field input[type=time],.field input[type=password],.field textarea,.field select{
     width:100%; padding:11px 12px; border-radius:11px; border:1.5px solid var(--line); background:var(--surface2); color:var(--ink); font-size:15px;}
   .field textarea{resize:vertical; min-height:64px;}
   .hint{font-size:11.5px; color:var(--ink-dim); margin-top:5px;}
@@ -289,10 +289,11 @@
   <div class="view" id="view-dashboard"></div>
   <div class="view" id="view-inquiries" hidden></div>
   <div class="view" id="view-bookings" hidden></div>
+  <div class="view" id="view-expenses" hidden></div>
   <div class="view" id="view-resources" hidden></div>
   <div class="view" id="view-more" hidden></div>
 
-  <button class="fab" id="fabBtn" onclick="openInquiryForm()" aria-label="New inquiry">
+  <button class="fab" id="fabBtn" onclick="fabAction()" aria-label="New inquiry">
     <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
   </button>
 
@@ -306,6 +307,9 @@
     </button>
     <button class="tab" data-tab="bookings" onclick="nav('bookings')">
       <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4" stroke-linecap="round"/></svg><span>Bookings</span>
+    </button>
+    <button class="tab" data-tab="expenses" onclick="nav('expenses')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 14.5h2" stroke-linecap="round"/></svg><span>Expenses</span>
     </button>
     <button class="tab" data-tab="resources" onclick="nav('resources')">
       <svg viewBox="0 0 24 24"><rect x="3" y="7" width="13" height="12" rx="2"/><path d="M16 11l5-3v10l-5-3" stroke-linejoin="round"/></svg><span>Resources</span>
