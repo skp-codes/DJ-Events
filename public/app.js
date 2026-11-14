@@ -6,8 +6,16 @@
 var EVENT_TYPES = ['Wedding','Birthday','Corporate Event','College Fest','Festival/Community','Sangeet','House Party','Other'];
 var CHANNELS = ['Walk-In / Repeat / Referral','Instagram','Google Search','Wedding Listing Portal','Friends & Family','YouTube','Others'];
 var INQUIRY_TYPES = ['New Client','Repeat Client','Referral'];
-var LOCATIONS = ['Chennai - Central','Chennai - North','Chennai - South','Chennai - OMR/East','Chennai - West','Out of Station','Other'];
 var PAY_METHODS = ['Cash','UPI','Bank Transfer','Card','Other'];
+// Chennai locality -> area, from the owner's Location_List.xlsx. Typing in the location box
+// suggests these; picking one fills the area. "Other" lets you type both by hand.
+var LOCATION_LIST = [["Anna Nagar","North Chennai"],["Basin Bridge","North Chennai"],["Broadway","North Chennai"],["Ennore","North Chennai"],["Erukanchery","North Chennai"],["George Town","North Chennai"],["ICF Colony","North Chennai"],["Jamalia","North Chennai"],["Kathirvedu","North Chennai"],["Kathivakkam","North Chennai"],["Kodungaiyur","North Chennai"],["Korukkupet","North Chennai"],["Kosapet","North Chennai"],["Lakshmipuram","North Chennai"],["Madhavaram","North Chennai"],["Madhavaram Milk Colony","North Chennai"],["M.K.B. Nagar","North Chennai"],["Manali","North Chennai"],["Manali New Town","North Chennai"],["Manjambakkam","North Chennai"],["Mannadi","North Chennai"],["Mathur (Mathur MMDA, Periya Mathur, China Mathur) North Madras","North Chennai"],["Minjur","North Chennai"],["Moolakadai","North Chennai"],["Naravarikuppam","North Chennai"],["New Washermenpet","North Chennai"],["Old Washermenpet","North Chennai"],["Otteri","North Chennai"],["Park Town","North Chennai"],["Parry's Corner","North Chennai"],["Pattalam","North Chennai"],["Perambur","North Chennai"],["Periamet","North Chennai"],["Ponniammanmedu","North Chennai"],["Pulianthope","North Chennai"],["Puzhal","North Chennai"],["Red Hills","North Chennai"],["Royapuram","North Chennai"],["Selavoyal","North Chennai"],["Sembiam","North Chennai"],["Surapet","North Chennai"],["T.V.K. Nagar","North Chennai"],["Tiruvottiyur","North Chennai"],["Tondiarpet","North Chennai"],["Vallalar Nagar","North Chennai"],["Villivakkam","North Chennai"],["Vyasarpadi","North Chennai"],["Adambakkam","South Chennai"],["Adyar","South Chennai"],["Alandur","South Chennai"],["Besant Nagar","South Chennai"],["Chetpet","South Chennai"],["Chromepet","South Chennai"],["Egmore","South Chennai"],["Gopalapuram","South Chennai"],["Guindy","South Chennai"],["Hastinapuram","South Chennai"],["Injambakkam","South Chennai"],["Irumbuliyur","South Chennai"],["Kadaperi","South Chennai"],["Keelkattalai","South Chennai"],["Kolappakkam","South Chennai"],["Kottivakkam","South Chennai"],["Kovilambakkam","South Chennai"],["Madipakkam","South Chennai"],["Mambakkam","South Chennai"],["Medavakkam","South Chennai"],["Mudichur","South Chennai"],["Mylapore","South Chennai"],["Nagalkeni","South Chennai"],["Nanganallur","South Chennai"],["Neelankarai","South Chennai"],["Palavakkam","South Chennai"],["Pallavaram","South Chennai"],["Pallikaranai","South Chennai"],["Pammal","South Chennai"],["Pazhavanthangal","South Chennai"],["Peerkankaranai","South Chennai"],["Perungalathur","South Chennai"],["Perungudi","South Chennai"],["Pozhichur","South Chennai"],["Pudupet","South Chennai"],["Saidapet","South Chennai"],["Selaiyur","South Chennai"],["Sholinganallur","South Chennai"],["Tambaram","South Chennai"],["Taramani","South Chennai"],["Teynampet","South Chennai"],["Thiruvanmiyur","South Chennai"],["Thoraipakkam","South Chennai"],["Thousand Lights","South Chennai"],["Triplicane","South Chennai"],["T. Nagar","South Chennai"],["Vandalur","South Chennai"],["Varadharajapuram","South Chennai"],["Velachery","South Chennai"],["West Mambalam","South Chennai"],["Alapakkam","West Chennai"],["Alwarthirunagar","West Chennai"],["Ambattur","West Chennai"],["Aminjikarai","West Chennai"],["Arumbakkam","West Chennai"],["Ashok Nagar","West Chennai"],["Avadi","West Chennai"],["Ayanavaram","West Chennai"],["Ayappakkam","West Chennai"],["CMDA Colony","West Chennai"],["Defence Colony","West Chennai"],["Gerugambakkam","West Chennai"],["Iyyapanthangal","West Chennai"],["Karambakkam","West Chennai"],["K.K. Nagar","West Chennai"],["Korattur","West Chennai"],["Kovur","West Chennai"],["Koyambedu","West Chennai"],["Kundrathur","West Chennai"],["Maduravoyal","West Chennai"],["Mangadu","West Chennai"],["Mannurpet","West Chennai"],["M.G.R. Garden","West Chennai"],["M.G.R. Nagar","West Chennai"],["Mogappair","West Chennai"],["Mowlivakkam","West Chennai"],["Mugalivakkam","West Chennai"],["Nandambakkam","West Chennai"],["Nerkundrum","West Chennai"],["Nesapakkam","West Chennai"],["Nolambur","West Chennai"],["Padi","West Chennai"],["Pattabiram","West Chennai"],["Poonamallee","West Chennai"],["Porur","West Chennai"],["Pudur","West Chennai"],["Ramapuram","West Chennai"],["Saligramam","West Chennai"],["Sikkarayapuram","West Chennai"],["Thirumangalam","West Chennai"],["Thirumazhisai","West Chennai"],["Thirumullaivayal","West Chennai"],["Thirunindravur","West Chennai"],["Thiruverkadu","West Chennai"],["Vadapalani","West Chennai"],["Valasaravakkam","West Chennai"],["Virugambakkam","West Chennai"]];
+var LOC_OTHER = '__other';
+var MONEY_FLOWS = [
+  {key:'', label:'No money effect'},
+  {key:'in', label:'Money in (+)'},
+  {key:'out', label:'Money out (−)'}
+];
 var DEFAULT_EXPENSE_TYPES = ['Salary','Crew wages','Fuel','Food & refreshments','Equipment rental','Miscellaneous','Additional expenses'];
 var NEW_TYPE_CHIP = '+ New type';
 function browserTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }catch(e){ return 'Asia/Kolkata'; } }
@@ -148,6 +156,22 @@ function migrateData(d){
   if(!Array.isArray(d.settings.expenseTypes)) d.settings.expenseTypes = DEFAULT_EXPENSE_TYPES.slice();
   if(!d.settings.calendar || typeof d.settings.calendar!=='object') d.settings.calendar = {};
   for(var c in def.calendar){ if(!(c in d.settings.calendar)) d.settings.calendar[c] = def.calendar[c]; }
+  d.bookings.forEach(function(b){
+    b.payments = Array.isArray(b.payments) ? b.payments : [];
+    b.discounts = Array.isArray(b.discounts) ? b.discounts : [];
+    // Allocation used to be one equipment + one transport; it's now a list of each.
+    if(!Array.isArray(b.equipmentResourceIds)) b.equipmentResourceIds = b.equipmentResourceId ? [b.equipmentResourceId] : [];
+    if(!Array.isArray(b.transportResourceIds)) b.transportResourceIds = b.transportResourceId ? [b.transportResourceId] : [];
+    delete b.equipmentResourceId; delete b.transportResourceId;
+    if(!Array.isArray(b.extraResourceIds)) b.extraResourceIds = [];
+    if(!b.allocCustom || typeof b.allocCustom!=='object') b.allocCustom = {};
+    ['equipment','transport','other'].forEach(function(k){ if(typeof b.allocCustom[k]!=='string') b.allocCustom[k] = ''; });
+  });
+  d.resources.forEach(function(r){
+    if(r.flow!=='in' && r.flow!=='out') r.flow = '';
+    r.amount = Number(r.amount)||0;
+  });
+  d.inquiries.forEach(function(i){ syncInquiryStatus(i, d); });
   return d;
 }
 
@@ -227,7 +251,7 @@ function seedSampleData(){
     var id = uid('INQ');
     d.inquiries.push({
       id:id, createdAt:nowIso(), inquiryDate: offset(-3), name:s.name, phone:'98765 4'+Math.floor(1000+Math.random()*8999),
-      altPhone:'', location:'Chennai - Central', eventType:s.eventType, channel:s.channel, inquiryType:'New Client',
+      altPhone:'', location:'Anna Nagar', area:'North Chennai', partyHall:'', eventType:s.eventType, channel:s.channel, inquiryType:'New Client',
       eventDate: offset(s.days), notes:'Sample inquiry — edit or delete freely.', status:s.status, sample:true
     });
     if(s.status==='followup'){
@@ -240,10 +264,10 @@ function seedSampleData(){
     d.bookings.push({
       id: uid('BK'), inquiryId: convertedInq.id, createdAt: nowIso(), bookingDate: offset(-5),
       eventDate: convertedInq.eventDate, eventType: convertedInq.eventType, name: convertedInq.name,
-      phone: convertedInq.phone, altPhone:'', location: convertedInq.location, channel: convertedInq.channel,
+      phone: convertedInq.phone, altPhone:'', location: convertedInq.location, area: convertedInq.area, partyHall: convertedInq.partyHall, channel: convertedInq.channel,
       totalAmount: 9000, advanceAmount: 3000, advanceDate: offset(-5),
-      payments:[{id:uid('PAY'), amount:3000, date:offset(-5), method:'UPI', note:'Advance'}],
-      equipmentResourceId: d.resources[0].id, transportResourceId: null, extraResourceIds: [],
+      payments:[{id:uid('PAY'), amount:3000, date:offset(-5), method:'UPI', note:'Advance payment', isAdvance:true}], discounts:[],
+      equipmentResourceIds: [d.resources[0].id], transportResourceIds: [], extraResourceIds: [], allocCustom:{equipment:'',transport:'',other:''},
       status:'confirmed', calendarAdded:false, notes:'', sample:true
     });
   }
@@ -798,10 +822,82 @@ function chipValueWithOther(chipId, inputId, triggerValues){
   return val;
 }
 
+/* ---- Location picker: type a few letters, pick a Chennai locality and its area fills in.
+   "Other" switches to free text for both the location and the area. ---- */
+function findLoc(name){
+  var n = String(name||'').trim().toLowerCase();
+  if(!n) return null;
+  return LOCATION_LIST.find(function(x){ return x[0].toLowerCase()===n; }) || null;
+}
+function locationPickerHtml(pfx, loc, area){
+  loc = String(loc||'').replace(/^(Other|Out of Station):\s*/,''); // older entries were saved as "Other: <typed text>"
+  var known = findLoc(loc);
+  var other = !!(loc && !known);
+  return '<div class="field"><label>Event location</label>' +
+      '<div class="loc-wrap">' +
+        '<input type="text" id="'+pfx+'Loc" autocomplete="off" data-mode="'+(other?'other':'list')+'" placeholder="Start typing, e.g. Anna Nagar" value="'+esc(known?known[0]:(loc||''))+'">' +
+        '<div class="loc-sugg" id="'+pfx+'LocSugg" hidden></div>' +
+      '</div>' +
+      '<div class="hint" id="'+pfx+'LocOtherHint" style="'+(other?'':'display:none;')+'">Typing your own location and area. <a href="#" id="'+pfx+'LocBack">Pick from the list instead</a></div>' +
+    '</div>' +
+    '<div class="field"><label>Area</label><input type="text" id="'+pfx+'Area" placeholder="'+(other?'Type the area':'Fills in when you pick a location')+'" value="'+esc(known?known[1]:(area||''))+'"'+(other?'':' readonly')+'></div>';
+}
+function wireLocationPicker(pfx){
+  var inp = document.getElementById(pfx+'Loc'), sugg = document.getElementById(pfx+'LocSugg');
+  var area = document.getElementById(pfx+'Area'), hint = document.getElementById(pfx+'LocOtherHint');
+  function setMode(m){
+    inp.dataset.mode = m; area.readOnly = m!=='other';
+    area.placeholder = m==='other' ? 'Type the area' : 'Fills in when you pick a location';
+    hint.style.display = m==='other' ? '' : 'none';
+  }
+  function render(){
+    if(inp.dataset.mode==='other'){ sugg.hidden = true; return; }
+    var q = inp.value.trim().toLowerCase(), starts = [], contains = [];
+    LOCATION_LIST.forEach(function(x, k){
+      var n = x[0].toLowerCase();
+      if(!q || n.indexOf(q)===0) starts.push(k); else if(n.indexOf(q)>-1) contains.push(k);
+    });
+    var ks = starts.concat(contains).slice(0, 8);
+    sugg.innerHTML = ks.map(function(k){
+      return '<button type="button" class="loc-opt" data-k="'+k+'"><b>'+esc(LOCATION_LIST[k][0])+'</b><span>'+esc(LOCATION_LIST[k][1])+'</span></button>';
+    }).join('') + '<button type="button" class="loc-opt loc-other" data-k="other"><b>Other</b><span>Not in the list — type the location &amp; area</span></button>';
+    sugg.hidden = false;
+  }
+  inp.addEventListener('input', function(){
+    if(inp.dataset.mode==='other' && !inp.value.trim()){ setMode('list'); area.value = ''; }
+    if(inp.dataset.mode!=='other'){ var m = findLoc(inp.value); area.value = m ? m[1] : ''; }
+    render();
+  });
+  inp.addEventListener('focus', render);
+  inp.addEventListener('blur', function(){ setTimeout(function(){ sugg.hidden = true; }, 200); });
+  sugg.addEventListener('mousedown', function(e){ e.preventDefault(); });
+  sugg.addEventListener('click', function(e){
+    var btn = e.target.closest('.loc-opt'); if(!btn) return;
+    if(btn.dataset.k==='other'){ setMode('other'); area.value = ''; sugg.hidden = true; inp.focus(); return; }
+    var x = LOCATION_LIST[Number(btn.dataset.k)];
+    inp.value = x[0]; area.value = x[1]; sugg.hidden = true; inp.blur();
+  });
+  document.getElementById(pfx+'LocBack').addEventListener('click', function(e){
+    e.preventDefault(); setMode('list');
+    var m = findLoc(inp.value); area.value = m ? m[1] : '';
+    inp.focus();
+  });
+}
+// Returns {location, area} or {error}. Pass optional=true to allow an empty location.
+function readLocationPicker(pfx, optional){
+  var inp = document.getElementById(pfx+'Loc');
+  var loc = inp.value.trim(), area = document.getElementById(pfx+'Area').value.trim();
+  if(!loc) return optional ? {location:'', area:''} : {error:'Pick an event location'};
+  if(inp.dataset.mode==='other') return {location:loc, area:area};
+  var m = findLoc(loc);
+  if(!m) return {error:'Pick "'+loc+'" from the list, or choose Other to type it yourself'};
+  return {location:m[0], area:m[1]};
+}
+
 /* ================================ CONFLICT CHECK ================================ */
 function findConflictingBooking(eventDate, excludeId){
   return DB.bookings.find(function(b){
-    return b.eventDate === eventDate && b.status !== 'cancelled' && b.id !== excludeId;
+    return b.eventDate === eventDate && isLiveBooking(b) && b.id !== excludeId;
   });
 }
 
@@ -812,8 +908,8 @@ function computeHealth(){
   var y1start = new Date(now); y1start.setFullYear(y1start.getFullYear()-1);
   var y2start = new Date(now); y2start.setFullYear(y2start.getFullYear()-2);
   function revInRange(from,to){
-    return DB.bookings.filter(function(b){ return b.status!=='cancelled' && b.eventDate>=from.toISOString().slice(0,10) && b.eventDate<to.toISOString().slice(0,10); })
-      .reduce(function(sum,b){return sum+(Number(b.totalAmount)||0);},0);
+    return liveBookings().filter(function(b){ return b.eventDate>=from.toISOString().slice(0,10) && b.eventDate<to.toISOString().slice(0,10); })
+      .reduce(function(sum,b){return sum+bookingNet(b);},0);
   }
   var thisYearRev = revInRange(y1start, now);
   var lastYearRev = revInRange(y2start, y1start);
@@ -826,8 +922,8 @@ function computeHealth(){
   var convRate = totalLeads>0 ? converted/totalLeads : 0;
   var convScore = clamp((convRate/0.30)*20,0,20);
 
-  var activeBookings = DB.bookings.filter(function(b){return b.status!=='cancelled';});
-  var totalDue = activeBookings.reduce(function(s2,b){return s2+(Number(b.totalAmount)||0);},0);
+  var activeBookings = liveBookings();
+  var totalDue = activeBookings.reduce(function(s2,b){return s2+bookingNet(b);},0);
   var totalCollected = activeBookings.reduce(function(s2,b){return s2+paidSoFar(b);},0);
   var payRate = totalDue>0 ? totalCollected/totalDue : 1;
   var payScore = clamp(payRate,0,1)*20;
@@ -854,7 +950,7 @@ function computeHealth(){
 function recoveredSoFar(kind){
   var s = DB.settings;
   var already = Number(kind==='equipment'? s.equipmentAlreadyRecovered : s.transportAlreadyRecovered)||0;
-  var fromBookings = DB.bookings.filter(function(b){return b.status!=='cancelled';}).reduce(function(sum,b){
+  var fromBookings = liveBookings().reduce(function(sum,b){
     var alloc = s.eventTypeAlloc[b.eventType] || DEFAULT_ALLOC.Other;
     return sum + (kind==='equipment'? (Number(alloc.equip)||0) : (Number(alloc.transport)||0));
   },0);
@@ -882,10 +978,56 @@ function paidSoFar(b){
   // double-count it. paidSoFarAll already sums the payments list correctly — use that.
   return paidSoFarAll(b);
 }
-function balanceDue(b){ return Math.max((Number(b.totalAmount)||0) - paidSoFarAll(b), 0); }
+function balanceDue(b){ return Math.max(bookingNet(b) - paidSoFarAll(b), 0); }
 function paidSoFarAll(b){
   return (b.payments||[]).reduce(function(s,p){return s+(Number(p.amount)||0);},0);
 }
+
+/* ---- Booking state: an inquiry only counts as a booking once money has been paid against it.
+   Delete every payment (e.g. the advance is cancelled) and it drops back to the inquiry list.
+   The booking record is kept as a draft so its quote, allocation and expenses aren't lost. ---- */
+function hasPayment(b){ return paidSoFarAll(b) > 0; }
+function isLiveBooking(b){ return b.status!=='cancelled' && hasPayment(b); }
+function liveBookings(){ return DB.bookings.filter(isLiveBooking); }
+function bookingForInquiry(inqId, d){
+  d = d || DB;
+  var list = d.bookings.filter(function(b){ return inqId && b.inquiryId===inqId; });
+  return list.find(isLiveBooking) || list.find(hasPayment) || list.find(function(b){return b.status!=='cancelled';}) || list[0] || null;
+}
+function syncInquiryStatus(inq, d){
+  d = d || DB;
+  if(!inq) return;
+  var booked = d.bookings.some(function(b){ return b.inquiryId===inq.id && hasPayment(b); });
+  if(booked){ inq.status = 'converted'; return; }
+  if(inq.status==='converted'){
+    var hasFu = d.followups.some(function(f){ return f.inquiryId===inq.id && !f.done; });
+    inq.status = hasFu ? 'followup' : 'open';
+  }
+}
+// Call after any payment change. Keeps the inquiry's status and the advance fields in step.
+function afterPaymentChange(b){
+  var adv = (b.payments||[]).find(function(p){ return p.isAdvance || p.note==='Advance payment' || p.method==='Advance'; });
+  b.advanceAmount = adv ? (Number(adv.amount)||0) : 0;
+  b.advanceDate = adv ? adv.date : '';
+  var inq = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
+  var before = inq ? inq.status : null;
+  syncInquiryStatus(inq);
+  if(inq && before==='converted' && inq.status!=='converted') toast('No payment left — moved back to Inquiries');
+  if(inq && before!=='converted' && inq.status==='converted') toast('Payment received — now a booking');
+}
+
+/* ---- Money: discounts lower what the client pays; resources marked "money in" add to it,
+   resources marked "money out" (e.g. complimentary items) are a cost against profit. ---- */
+function discountTotal(b){ return (b.discounts||[]).reduce(function(s,x){return s+(Number(x.amount)||0);},0); }
+function allocatedResources(b){
+  var ids = [].concat(b.equipmentResourceIds||[], b.transportResourceIds||[], b.extraResourceIds||[]);
+  return DB.resources.filter(function(r){ return ids.indexOf(r.id)>-1; });
+}
+function resourceMoney(b, flow){
+  return allocatedResources(b).filter(function(r){return r.flow===flow;}).reduce(function(s,r){return s+(Number(r.amount)||0);},0);
+}
+function bookingNet(b){ return Math.max((Number(b.totalAmount)||0) - discountTotal(b), 0) + resourceMoney(b,'in'); }
+function bookingCosts(b){ return expenseTotal(expensesFor(b.id)) + resourceMoney(b,'out'); }
 
 function healthColor(v){ return v>=80? getCss('--good') : v>=60? getCss('--primary') : v>=40? getCss('--warn') : getCss('--bad'); }
 function getCss(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
@@ -903,13 +1045,13 @@ function drawRing(svgEl, pct, size, stroke, color){
 function renderDashboard(){
   var el = document.getElementById('view-dashboard');
   var health = computeHealth();
-  var openInq = DB.inquiries.filter(function(i){return i.status==='open'||i.status==='followup';}).length;
-  var totalBookings = DB.bookings.filter(function(b){return b.status!=='cancelled';}).length;
-  var totalRevenue = DB.bookings.filter(function(b){return b.status!=='cancelled';}).reduce(function(s,b){return s+(Number(b.totalAmount)||0);},0);
-  var totalEvents = DB.bookings.filter(function(b){return b.status==='completed';}).length;
+  var openInq = DB.inquiries.filter(isOpenInquiry).length;
+  var totalBookings = liveBookings().length;
+  var totalRevenue = liveBookings().reduce(function(s,b){return s+bookingNet(b);},0);
+  var totalEvents = DB.bookings.filter(function(b){return b.status==='completed' && hasPayment(b);}).length;
   var convRate = health.convRate*100;
   var avgBooking = totalBookings>0 ? totalRevenue/totalBookings : 0;
-  var pendingBookings = DB.bookings.filter(function(b){return b.status!=='cancelled' && balanceDue(b)>0;});
+  var pendingBookings = liveBookings().filter(function(b){return balanceDue(b)>0;});
   var pendingTotal = pendingBookings.reduce(function(s,b){return s+balanceDue(b);},0);
   var equipPace = clamp(paybackPace('equipment'),0,1.5)*100;
   var transPace = clamp(paybackPace('transport'),0,1.5)*100;
@@ -1002,12 +1144,12 @@ function bookingsTableHtml(list){
       '<td>'+fmtDateShort(b.eventDate)+'</td>' +
       '<td>'+esc(b.name)+'</td>' +
       '<td>'+esc(b.eventType)+'</td>' +
-      '<td class="num">'+fmtMoney(b.totalAmount)+'</td>' +
+      '<td class="num">'+fmtMoney(bookingNet(b))+'</td>' +
       '<td class="num">'+fmtMoney(balanceDue(b))+'</td>' +
       '<td><span class="badge '+b.status+'">'+b.status+'</span></td>' +
     '</tr>';
   }).join('');
-  var total = list.reduce(function(s,b){return s+(Number(b.totalAmount)||0);},0);
+  var total = list.reduce(function(s,b){return s+bookingNet(b);},0);
   var avg = list.length ? total/list.length : 0;
   return '<div style="overflow-x:auto;"><table class="dtable"><thead><tr>' +
     '<th>Date</th><th>Client</th><th>Event Type</th><th class="num">Amount</th><th class="num">Balance Due</th><th>Status</th>' +
@@ -1023,7 +1165,7 @@ function inquiriesTableHtml(list){
       '<td>'+esc(i.name)+'</td>' +
       '<td>'+esc(i.eventType)+'</td>' +
       '<td>'+esc(i.channel||'—')+'</td>' +
-      '<td><span class="badge '+i.status+'">'+i.status+'</span></td>' +
+      '<td><span class="badge '+i.status+'">'+statusLabel(i.status)+'</span></td>' +
     '</tr>';
   }).join('');
   return '<div style="overflow-x:auto;"><table class="dtable"><thead><tr>' +
@@ -1038,7 +1180,7 @@ function conversionTableHtml(){
   var rows = statuses.map(function(st){
     var count = DB.inquiries.filter(function(i){return i.status===st;}).length;
     var pct = total ? (count/total*100) : 0;
-    return '<tr><td><span class="badge '+st+'">'+st+'</span></td><td class="num">'+count+'</td><td class="num">'+pct.toFixed(1)+'%</td></tr>';
+    return '<tr><td><span class="badge '+st+'">'+statusLabel(st)+'</span></td><td class="num">'+count+'</td><td class="num">'+pct.toFixed(1)+'%</td></tr>';
   }).join('');
   var converted = DB.inquiries.filter(function(i){return i.status==='converted';}).length;
   return '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">% of total</th></tr></thead>' +
@@ -1047,7 +1189,7 @@ function conversionTableHtml(){
 }
 function paybackTableHtml(kind){
   var s = DB.settings;
-  var list = DB.bookings.filter(function(b){return b.status!=='cancelled';}).slice().sort(byEventDateDesc);
+  var list = liveBookings().slice().sort(byEventDateDesc);
   var label = kind==='equipment' ? 'Equipment' : 'Transport';
   if(!list.length) return emptyState('No bookings yet', 'Recovery builds up as you add bookings.');
   var rows = list.map(function(b){
@@ -1071,13 +1213,13 @@ function paybackTableHtml(kind){
     '<tfoot><tr><td colspan="4">From bookings: '+fmtMoney(fromBookings)+' + already recovered: '+fmtMoney(already)+' = '+fmtMoney(fromBookings+already)+' total</td></tr></tfoot></table></div>';
 }
 function openTileDetail(kind){
-  var activeBookings = DB.bookings.filter(function(b){return b.status!=='cancelled';}).slice().sort(byEventDateDesc);
+  var activeBookings = liveBookings().slice().sort(byEventDateDesc);
   var title, html;
   if(kind==='events'){
-    var completed = DB.bookings.filter(function(b){return b.status==='completed';}).slice().sort(byEventDateDesc);
+    var completed = DB.bookings.filter(function(b){return b.status==='completed' && hasPayment(b);}).slice().sort(byEventDateDesc);
     title = 'Completed Events'; html = bookingsTableHtml(completed);
   } else if(kind==='openInquiries'){
-    var openInqs = DB.inquiries.filter(function(i){return i.status==='open'||i.status==='followup';})
+    var openInqs = DB.inquiries.filter(isOpenInquiry)
       .slice().sort(function(a,b){return new Date(a.eventDate)-new Date(b.eventDate);});
     title = 'Open Inquiries'; html = inquiriesTableHtml(openInqs);
   } else if(kind==='activeBookings'){
@@ -1125,11 +1267,27 @@ function checkFollowupsDue(silent){
 
 /* ================================ INQUIRIES ================================ */
 var inquiryFilter = 'active';
-var INQ_FILTER_LABELS = {active:'Active', duefollowups:'Follow-ups', open:'Open', followup:'Followup', converted:'Converted', lost:'Lost', all:'All'};
+// One "Follow-ups" chip (the reminder list). The old separate "Followup" status chip was a duplicate.
+var INQ_FILTERS = ['active','duefollowups','open','converted','lost','all'];
+var INQ_FILTER_LABELS = {active:'Active', duefollowups:'Follow-ups', open:'Open', converted:'Booked', lost:'Lost', all:'All'};
+var STATUS_LABELS = {open:'open', followup:'follow-up', converted:'booked', lost:'lost'};
+function statusLabel(st){ return STATUS_LABELS[st] || st; }
+function isOpenInquiry(i){ return i.status==='open' || i.status==='followup'; }
+// Soonest event first; inquiries without an event date go to the end (by inquiry date).
+function byEventDateAsc(a,b){
+  var ad = a.eventDate || '', bd = b.eventDate || '';
+  if(ad && bd && ad!==bd) return ad < bd ? -1 : 1;
+  if(!ad !== !bd) return ad ? -1 : 1;
+  return (a.inquiryDate||'').localeCompare(b.inquiryDate||'');
+}
+function locationText(rec){
+  if(!rec) return '';
+  return [rec.partyHall, rec.location, rec.area].filter(function(x){return x && String(x).trim();}).join(', ');
+}
 function renderInquiries(){
   var el = document.getElementById('view-inquiries');
   var chipsHtml = '<div class="chipwrap" id="inqFilterChips" style="margin-bottom:14px;">' +
-      ['active','duefollowups','open','followup','converted','lost','all'].map(function(f){
+      INQ_FILTERS.map(function(f){
         return '<button class="chip'+(inquiryFilter===f?' sel':'')+'" data-f="'+f+'">'+esc(INQ_FILTER_LABELS[f]||f)+'</button>';
       }).join('') +
     '</div>';
@@ -1140,9 +1298,12 @@ function renderInquiries(){
       '<div class="hint" style="margin-bottom:10px;">Everything you still need to follow up on, soonest first.</div>' +
       '<div class="card" style="padding:6px 10px;">' + renderFollowupTaskRows() + '</div>';
   } else {
+    if(INQ_FILTERS.indexOf(inquiryFilter)===-1) inquiryFilter = 'active';
     var list = DB.inquiries.slice().sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
-    if(inquiryFilter==='active') list = list.filter(function(i){return i.status==='open'||i.status==='followup';});
-    else if(inquiryFilter!=='all') list = list.filter(function(i){return i.status===inquiryFilter;});
+    if(inquiryFilter==='all') list.sort(byEventDateAsc);
+    else if(inquiryFilter==='active') list = list.filter(isOpenInquiry);
+    else if(inquiryFilter==='open') list = list.filter(isOpenInquiry).filter(function(i){return i.status==='open';});
+    else list = list.filter(function(i){return i.status===inquiryFilter;});
 
     el.innerHTML =
       '<h2 class="disp" style="margin:2px 0 12px;">Inquiries</h2>' + chipsHtml +
@@ -1178,13 +1339,15 @@ function emptyState(title, sub){
   return '<div class="empty"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke-width="1.6"/><path d="M9 12h6M12 9v6" stroke-width="1.6" stroke-linecap="round"/></svg><p><b>'+esc(title)+'</b><br>'+esc(sub)+'</p></div>';
 }
 function inquiryRow(i){
+  var b = bookingForInquiry(i.id);
+  var money = b ? ('<div class="row-sub num" style="margin-top:3px;">'+(hasPayment(b) ? fmtMoney(paidSoFarAll(b))+' paid' : 'Quote '+fmtMoney(bookingNet(b)))+'</div>') : '';
   return '<div class="list-row" onclick="openInquiryDetail(\''+i.id+'\')" style="cursor:pointer;">' +
     '<div class="avatar">'+initials(i.name)+'</div>' +
     '<div class="row-main">' +
       '<div class="row-title">'+esc(i.name)+'</div>' +
-      '<div class="row-sub">'+esc(i.eventType)+' · '+fmtDateShort(i.eventDate)+' · '+esc(i.channel)+'</div>' +
+      '<div class="row-sub">'+esc(i.eventType)+' · '+fmtDateShort(i.eventDate)+' · '+esc(i.partyHall || i.location || i.channel)+'</div>' +
     '</div>' +
-    '<div class="row-end"><span class="badge '+i.status+'">'+i.status+'</span></div>' +
+    '<div class="row-end"><span class="badge '+i.status+'">'+statusLabel(i.status)+'</span>'+money+'</div>' +
   '</div>';
 }
 renderers.inquiries = renderInquiries;
@@ -1196,27 +1359,26 @@ function openInquiryForm(prefill, editId){
   var editing = editId ? DB.inquiries.find(function(x){return x.id===editId;}) : null;
   if(editId && !editing) return;
   prefill = editing || prefill || {};
-  var ownBooking = editing ? DB.bookings.find(function(b){return b.inquiryId===editing.id;}) : null;
+  var ownBooking = editing ? bookingForInquiry(editing.id) : null;
   var f = {
     inquiryDate: prefill.inquiryDate || todayStr(),
     name: prefill.name||'', phone: prefill.phone||'', altPhone: prefill.altPhone||'', email: prefill.email||'',
-    location: prefill.location||'', eventType: prefill.eventType||'', channel: prefill.channel||'',
+    location: prefill.location||'', area: prefill.area||'', partyHall: prefill.partyHall||'', eventType: prefill.eventType||'', channel: prefill.channel||'',
     inquiryType: prefill.inquiryType||'New Client', eventDate: prefill.eventDate||'', eventTime: prefill.eventTime||'', notes: prefill.notes||''
   };
   function presetOr(list, v){ return !v || list.indexOf(v)>-1 ? v : null; }
   // Values typed into an "Other" box come back as free text: select the Other chip and refill the box.
-  var locSel = presetOr(LOCATIONS, f.location), locOther = locSel===null ? f.location : '';
-  var etSel = presetOr(EVENT_TYPES, f.eventType), etOther = etSel===null ? f.eventType : '';
-  var chSel = presetOr(CHANNELS, f.channel), chOther = chSel===null ? f.channel : '';
-  if(locSel===null) locSel = 'Other'; if(etSel===null) etSel = 'Other'; if(chSel===null) chSel = 'Others';
+  var etSel = presetOr(EVENT_TYPES, f.eventType), etOther = etSel===null ? f.eventType.replace(/^Other:\s*/,'') : '';
+  var chSel = presetOr(CHANNELS, f.channel), chOther = chSel===null ? f.channel.replace(/^Others:\s*/,'') : '';
+  if(etSel===null) etSel = 'Other'; if(chSel===null) chSel = 'Others';
   var body =
     '<div class="field"><label>Inquiry date</label><input type="date" id="fInqDate" value="'+f.inquiryDate+'"></div>' +
     '<div class="field"><label>Client name</label><input type="text" id="fName" placeholder="Full name" value="'+esc(f.name)+'"></div>' +
     '<div class="field"><label>Phone</label><input type="tel" id="fPhone" placeholder="10-digit mobile" value="'+esc(f.phone)+'"></div>' +
     '<div class="field"><label>Alternate contact <span style="opacity:.6">(optional)</span></label><input type="tel" id="fAltPhone" value="'+esc(f.altPhone)+'"></div>' +
     '<div class="field"><label>Email <span style="opacity:.6">(optional)</span></label><input type="text" id="fEmail" placeholder="name@example.com" value="'+esc(f.email)+'"></div>' +
-    '<div class="field"><label>Event location</label>' + chips('fLocation', LOCATIONS, locSel) +
-      otherBox('fLocationOther', 'Type the location', ['Other','Out of Station'].indexOf(locSel)>-1) + '</div>' +
+    '<div class="field"><label>Party hall / venue name <span style="opacity:.6">(optional)</span></label><input type="text" id="fPartyHall" placeholder="e.g. Sri Lakshmi Mahal" value="'+esc(f.partyHall)+'"></div>' +
+    locationPickerHtml('f', f.location, f.area) +
     '<div class="field"><label>Event type</label>' + chips('fEventType', EVENT_TYPES, etSel) +
       otherBox('fEventTypeOther', 'Type the event type', etSel==='Other') + '</div>' +
     '<div class="field"><label>Enquiry channel</label>' + chips('fChannel', CHANNELS, chSel) +
@@ -1229,15 +1391,13 @@ function openInquiryForm(prefill, editId){
     '<div class="field"><label>Remind me on</label><input type="datetime-local" id="fFollowupAt" value=""></div>' +
     '<div class="field"><label>Reminder note <span style="opacity:.6">(optional)</span></label><input type="text" id="fFollowupNote" placeholder="e.g. Call back with quote"></div>' +
     '<div id="fCalLinkWrap" style="display:none;margin:-6px 0 14px;"><button type="button" class="btn ghost sm" id="fCalLink">Add reminder to calendar</button></div>') +
-    (ownBooking ? '<div class="hint" style="margin-bottom:14px;">This inquiry is already a booking. Name, phone, location and channel changes are copied to the booking too.</div>' : '') +
+    (ownBooking ? '<div class="hint" style="margin-bottom:14px;">This inquiry has a booking. Name, phone, venue, location, event type and channel changes are copied to the booking too.</div>' : '') +
     '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="fNotes" placeholder="Anything else to remember">'+esc(f.notes)+'</textarea></div>';
   var foot = '<button class="btn primary" id="saveInqBtn">'+(editing?'Save changes':'Save inquiry')+'</button>';
   openSheet(editing?'Edit Inquiry':'New Inquiry', body, foot);
-  if(locOther) document.getElementById('fLocationOther').value = locOther;
   if(etOther) document.getElementById('fEventTypeOther').value = etOther;
   if(chOther) document.getElementById('fChannelOther').value = chOther;
-  wireChips('fLocation', false, function(){checkFormConflict();});
-  wireOtherBox('fLocation', 'fLocationOther', ['Other','Out of Station']);
+  wireLocationPicker('f');
   wireChips('fEventType', false, function(){});
   wireOtherBox('fEventType', 'fEventTypeOther', ['Other']);
   wireChips('fChannel', false, function(){});
@@ -1279,14 +1439,16 @@ function openInquiryForm(prefill, editId){
     var name = document.getElementById('fName').value.trim();
     var phone = document.getElementById('fPhone').value.trim();
     var eventDate = document.getElementById('fEventDate').value;
-    var location = chipValueWithOther('fLocation','fLocationOther',['Other','Out of Station']);
-    var eventType = getChipValue('fEventType', false);
+    var locPick = readLocationPicker('f');
+    var location = locPick.location, area = locPick.area;
+    var partyHall = document.getElementById('fPartyHall').value.trim();
+    var eventType = chipValueWithOther('fEventType','fEventTypeOther',['Other']);
     var channel = chipValueWithOther('fChannel','fChannelOther',['Others']);
     var inquiryType = getChipValue('fInquiryType', false);
     if(!inquiryDate){ toast('Pick the inquiry date'); return; }
     if(!name){ toast('Enter the client name'); return; }
     if(!phone){ toast('Enter the phone number'); return; }
-    if(!location){ toast('Pick an event location'); return; }
+    if(locPick.error){ toast(locPick.error); return; }
     if(!eventType){ toast('Pick an event type'); return; }
     if(!channel){ toast('Pick an enquiry channel'); return; }
     if(!inquiryType){ toast('Pick an inquiry type'); return; }
@@ -1295,12 +1457,14 @@ function openInquiryForm(prefill, editId){
         editing.inquiryDate = inquiryDate; editing.name = name; editing.phone = phone;
         editing.altPhone = document.getElementById('fAltPhone').value.trim();
         editing.email = document.getElementById('fEmail').value.trim();
-        editing.location = location; editing.eventType = eventType; editing.channel = channel; editing.inquiryType = inquiryType;
+        editing.location = location; editing.area = area; editing.partyHall = partyHall;
+        editing.eventType = eventType; editing.channel = channel; editing.inquiryType = inquiryType;
         editing.eventDate = eventDate; editing.eventTime = document.getElementById('fEventTime').value;
         editing.notes = document.getElementById('fNotes').value.trim(); editing.updatedAt = nowIso();
         if(ownBooking){
           ownBooking.name = name; ownBooking.phone = phone; ownBooking.altPhone = editing.altPhone;
-          ownBooking.location = location; ownBooking.channel = channel;
+          ownBooking.location = location; ownBooking.area = area; ownBooking.partyHall = partyHall;
+          ownBooking.channel = channel; ownBooking.eventType = eventType;
         }
         saveData(); openInquiryDetail(editing.id); if(renderers[currentTab]) renderers[currentTab]();
         toast('Inquiry updated');
@@ -1312,7 +1476,7 @@ function openInquiryForm(prefill, editId){
         inquiryDate: inquiryDate || todayStr(),
         name:name, phone:phone, altPhone: document.getElementById('fAltPhone').value.trim(),
         email: document.getElementById('fEmail').value.trim(),
-        location: location,
+        location: location, area: area, partyHall: partyHall,
         eventType: eventType,
         channel: channel,
         inquiryType: inquiryType,
@@ -1346,15 +1510,18 @@ function openInquiryDetail(id){
   var i = DB.inquiries.find(function(x){return x.id===id;});
   if(!i) return;
   var fups = DB.followups.filter(function(f){return f.inquiryId===id;}).sort(function(a,b){return new Date(a.dueAt)-new Date(b.dueAt);});
+  var bk = bookingForInquiry(id);
   var body =
     '<div class="card" style="margin-bottom:14px;">' +
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">' +
         '<div class="avatar" style="width:46px;height:46px;font-size:16px;">'+initials(i.name)+'</div>' +
-        '<div><div style="font-weight:700;font-size:16px;">'+esc(i.name)+'</div><span class="badge '+i.status+'">'+i.status+'</span></div>' +
+        '<div><div style="font-weight:700;font-size:16px;">'+esc(i.name)+'</div><span class="badge '+i.status+'">'+statusLabel(i.status)+'</span></div>' +
       '</div>' +
       '<div class="kv"><span class="k">Phone</span><span class="v">'+esc(i.phone||'—')+(i.altPhone?(' / '+esc(i.altPhone)):'')+'</span></div>' +
       (i.email ? '<div class="kv"><span class="k">Email</span><span class="v">'+esc(i.email)+'</span></div>' : '') +
+      '<div class="kv"><span class="k">Party hall</span><span class="v">'+esc(i.partyHall||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Location</span><span class="v">'+esc(i.location||'—')+'</span></div>' +
+      '<div class="kv"><span class="k">Area</span><span class="v">'+esc(i.area||'—')+'</span></div>' +
       '<div class="kv"><span class="k">Event type</span><span class="v">'+esc(i.eventType)+'</span></div>' +
       '<div class="kv"><span class="k">Event date</span><span class="v">'+fmtDate(i.eventDate)+(i.eventTime?' · '+fmtTime(i.eventTime):'')+'</span></div>' +
       '<div class="kv"><span class="k">Channel</span><span class="v">'+esc(i.channel||'—')+'</span></div>' +
@@ -1362,10 +1529,12 @@ function openInquiryDetail(id){
       '<div class="kv"><span class="k">Inquiry date</span><span class="v">'+fmtDate(i.inquiryDate)+'</span></div>' +
       (i.notes ? '<div class="kv"><span class="k">Notes</span><span class="v" style="text-align:right;max-width:60%;">'+esc(i.notes)+'</span></div>' : '') +
     '</div>' +
-    '<div class="section-title">Follow-ups</div>' +
+    (bk ? inquiryBookingCardHtml(bk) : '') +
+    '<div class="section-title">Follow-ups <span style="opacity:.6;text-transform:none;font-weight:600;">— tap one to edit</span></div>' +
     '<div class="card" style="margin-bottom:14px;">' +
       (fups.length ? fups.map(function(f){
-        return '<div class="linkrow"><span style="text-decoration:'+(f.done?'line-through':'none')+';opacity:'+(f.done?'.5':'1')+'">'+esc(f.note||'Follow up')+' — '+fmtDateTime(f.dueAt)+'</span>' +
+        return '<div class="linkrow">' +
+          '<span style="cursor:pointer;flex:1;text-decoration:'+(f.done?'line-through':'none')+';opacity:'+(f.done?'.5':'1')+'" onclick="openFollowupForm(\''+id+'\',\''+f.id+'\')">'+esc(f.note||'Follow up')+' — '+fmtDateTime(f.dueAt)+' <span class="edit-ic" style="color:var(--primary);font-size:11.5px;">Edit</span></span>' +
           (!f.done ? (
             '<span style="display:flex;gap:6px;">' +
             calButton(followupCalEvent(f, i.name), 'Calendar') +
@@ -1376,13 +1545,47 @@ function openInquiryDetail(id){
       }).join('') : emptyState('No follow-ups yet','Set a reminder below.')) +
       '<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="openFollowupForm(\''+id+'\')">+ Set follow-up reminder</button>' +
     '</div>' +
-    (i.status!=='converted' ? '<div class="btnrow" style="margin-bottom:10px;">' +
-      '<button class="btn danger" onclick="markInquiryLost(\''+id+'\')">Mark lost</button>' +
-      '<button class="btn primary" onclick="openConvertForm(\''+id+'\')">Convert to booking</button>' +
-    '</div>' : '<div class="hint">This inquiry has already been converted to a booking.</div>');
+    inquiryActionsHtml(i, bk);
 
   openSheet('Inquiry', body);
   setSheetHeadExtra('<button class="btn ghost sm" onclick="editInquiry(\''+id+'\')">Edit</button>');
+}
+// Money side of an inquiry: the quote while there's no payment, or the booking once there is.
+function inquiryBookingCardHtml(b){
+  var paid = paidSoFarAll(b), disc = discountTotal(b), due = balanceDue(b);
+  var title = hasPayment(b) ? ('Booking · '+b.status) : 'Quote — no payment yet';
+  return '<div class="section-title">'+esc(title)+'</div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      '<div class="kv"><span class="k">Event date</span><span class="v">'+fmtDate(b.eventDate)+(b.startTime?' · '+fmtTime(b.startTime)+(b.endTime?' – '+fmtTime(b.endTime):''):'')+'</span></div>' +
+      '<div class="kv"><span class="k">Booking amount</span><span class="v">'+fmtMoney(b.totalAmount)+'</span></div>' +
+      (disc ? '<div class="kv"><span class="k">Discount</span><span class="v" style="color:var(--bad)">−'+fmtMoney(disc)+'</span></div>' : '') +
+      (resourceMoney(b,'in') ? '<div class="kv"><span class="k">Add-on resources</span><span class="v">+'+fmtMoney(resourceMoney(b,'in'))+'</span></div>' : '') +
+      '<div class="kv"><span class="k">Client pays</span><span class="v">'+fmtMoney(bookingNet(b))+'</span></div>' +
+      '<div class="kv"><span class="k">Paid so far</span><span class="v" style="color:var(--good)">'+fmtMoney(paid)+'</span></div>' +
+      '<div class="kv"><span class="k">Balance due</span><span class="v" style="color:'+(due>0?'var(--warn)':'var(--good)')+'">'+fmtMoney(due)+'</span></div>' +
+      ((b.payments||[]).length ? '<div style="height:6px"></div>' + paymentRowsHtml(b, 'inquiry') : '') +
+      '<div class="btnrow" style="margin-top:10px;">' +
+        (due>0 || !hasPayment(b) ? '<button class="btn ghost sm" onclick="openPaymentForm(\''+b.id+'\',null,\'inquiry\')">'+(hasPayment(b)?'+ Add payment':'+ Record advance')+'</button>' : '') +
+        '<button class="btn ghost sm" onclick="openBookingDetail(\''+b.id+'\')">'+(hasPayment(b)?'Open booking':'Open quote details')+'</button>' +
+      '</div>' +
+    '</div>';
+}
+function inquiryActionsHtml(i, bk){
+  if(i.status==='converted') return '<div class="hint">This inquiry is a booking — it has a payment recorded. Delete all its payments and it moves back to the inquiry list.</div>';
+  if(i.status==='lost') return '<button class="btn ghost" onclick="reopenInquiry(\''+i.id+'\')">Reopen inquiry</button>';
+  return '<div class="btnrow" style="margin-bottom:10px;">' +
+      '<button class="btn danger" onclick="markInquiryLost(\''+i.id+'\')">Mark lost</button>' +
+      (bk ? '<button class="btn primary" onclick="openPaymentForm(\''+bk.id+'\',null,\'inquiry\')">Record advance</button>'
+          : '<button class="btn primary" onclick="openConvertForm(\''+i.id+'\')">Convert to booking</button>') +
+    '</div>' +
+    '<div class="hint">It becomes a booking (and leaves this list) as soon as a payment such as an advance is recorded.</div>';
+}
+function reopenInquiry(id){
+  var i = DB.inquiries.find(function(x){return x.id===id;});
+  if(!i) return;
+  i.status = DB.followups.some(function(f){return f.inquiryId===id && !f.done;}) ? 'followup' : 'open';
+  syncInquiryStatus(i);
+  saveData(); openInquiryDetail(id); if(renderers[currentTab]) renderers[currentTab](); toast('Inquiry reopened');
 }
 function editInquiry(id){ openInquiryForm(null, id); }
 function markFollowupDone(fid, inqId, refreshListOnly){
@@ -1394,7 +1597,7 @@ function markFollowupDone(fid, inqId, refreshListOnly){
 }
 function markInquiryLost(id){
   confirmModal({
-    title:'Mark as lost?', message:'This inquiry will be moved to Lost. You can still find it under the Lost filter.',
+    title:'Mark as lost?', message:'This inquiry will be moved to Lost. You can still find it under the Lost filter and reopen it later.',
     okText:'Mark lost', danger:true,
     onOk:function(){
       var i = DB.inquiries.find(function(x){return x.id===id;});
@@ -1403,17 +1606,24 @@ function markInquiryLost(id){
   });
 }
 
-/* ---- Follow-up form ---- */
-function openFollowupForm(inquiryId){
-  var defDt = new Date(Date.now()+24*3600000);
-  var defStr = localDateTimeStr(defDt);
+/* ---- Follow-up form (new, or edit an existing one when fid is given) ---- */
+function openFollowupForm(inquiryId, fid, backTo){
+  var editing = fid ? DB.followups.find(function(x){return x.id===fid;}) : null;
+  var defStr = editing ? localDateTimeStr(new Date(editing.dueAt)) : localDateTimeStr(new Date(Date.now()+24*3600000));
   var i0 = DB.inquiries.find(function(x){return x.id===inquiryId;});
+  function back(){
+    if(backTo){ openBookingDetail(backTo); return; }
+    openInquiryDetail(inquiryId);
+  }
   var body =
     '<div class="field"><label>Remind me on</label><input type="datetime-local" id="fuDate" value="'+defStr+'"></div>' +
-    '<div class="field"><label>Note <span style="opacity:.6">(optional)</span></label><textarea id="fuNote" placeholder="e.g. Call back with revised quote"></textarea></div>' +
+    '<div class="field"><label>Note <span style="opacity:.6">(optional)</span></label><textarea id="fuNote" placeholder="e.g. Call back with revised quote">'+esc(editing?editing.note:'')+'</textarea></div>' +
+    (editing ? '<div class="field"><label>Status</label>' + chips('fuDone', ['Pending','Done'], editing.done?'Done':'Pending') + '</div>' : '') +
     '<div id="fuCalLinkWrap" style="display:none;margin:-6px 0 14px;"><button type="button" class="btn ghost sm" id="fuCalLink">Add reminder to calendar</button></div>';
-  var foot = '<button class="btn primary" id="fuSaveBtn">Save reminder</button>';
-  openSheet('Set Follow-up', body, foot);
+  var foot = editing ? '<div class="btnrow"><button class="btn danger" id="fuDelBtn">Delete</button><button class="btn primary" id="fuSaveBtn">Save changes</button></div>'
+                     : '<button class="btn primary" id="fuSaveBtn">Save reminder</button>';
+  openSheet(editing ? 'Edit Follow-up' : 'Set Follow-up', body, foot);
+  if(editing) wireChips('fuDone', false, function(){});
   function syncFuCalLink(){
     var at = document.getElementById('fuDate').value;
     var wrap = document.getElementById('fuCalLinkWrap');
@@ -1430,12 +1640,28 @@ function openFollowupForm(inquiryId){
   document.getElementById('fuSaveBtn').onclick = function(){
     var dt = document.getElementById('fuDate').value;
     if(!dt){ toast('Pick a date & time'); return; }
-    var i = DB.inquiries.find(function(x){return x.id===inquiryId;});
-    if(i.status==='open') i.status='followup';
-    DB.followups.push({id:uid('FU'), inquiryId:inquiryId, dueAt:new Date(dt).toISOString(), note:document.getElementById('fuNote').value.trim(), done:false, createdAt:nowIso()});
+    var note = document.getElementById('fuNote').value.trim();
+    if(editing){
+      editing.dueAt = new Date(dt).toISOString(); editing.note = note;
+      editing.done = getChipValue('fuDone', false)==='Done';
+      editing.updatedAt = nowIso();
+      if(!editing.done) delete notifiedIds[editing.id];
+    } else {
+      var i = DB.inquiries.find(function(x){return x.id===inquiryId;});
+      if(i && i.status==='open') i.status='followup';
+      DB.followups.push({id:uid('FU'), inquiryId:inquiryId, dueAt:new Date(dt).toISOString(), note:note, done:false, createdAt:nowIso()});
+      maybeAskNotifPermission();
+    }
     saveData();
-    maybeAskNotifPermission();
-    openInquiryDetail(inquiryId); checkFollowupsDue(true); toast('Reminder set');
+    back(); checkFollowupsDue(true); if(renderers[currentTab]) renderers[currentTab]();
+    toast(editing ? 'Follow-up updated' : 'Reminder set');
+  };
+  if(editing) document.getElementById('fuDelBtn').onclick = function(){
+    confirmModal({title:'Delete this follow-up?', message:(editing.note||'Follow up')+' — '+fmtDateTime(editing.dueAt), okText:'Delete', danger:true,
+      onOk:function(){
+        DB.followups = DB.followups.filter(function(x){return x.id!==editing.id;});
+        saveData(); back(); checkFollowupsDue(true); if(renderers[currentTab]) renderers[currentTab](); toast('Follow-up deleted');
+      }});
   };
 }
 function maybeAskNotifPermission(){
@@ -1459,7 +1685,9 @@ function openConvertForm(inquiryId){
     '<div id="cConflictBox"></div>' +
     '<div class="field"><label>Total amount (₹)</label><input type="number" id="cTotal" placeholder="e.g. 12000"></div>' +
     '<div class="field"><label>Advance received (₹)</label><input type="number" id="cAdvance" value="0"></div>' +
-    '<div class="field"><label>Advance date</label><input type="date" id="cAdvDate" value="'+todayStr()+'"></div>';
+    '<div class="field"><label>Advance date</label><input type="date" id="cAdvDate" value="'+todayStr()+'"></div>' +
+    '<div class="field"><label>Advance paid by</label>' + chips('cAdvMethod', PAY_METHODS, 'UPI') + '</div>' +
+    '<div class="hint" style="margin-bottom:14px;">It becomes a booking once an advance is entered. Leave the advance at 0 to save this as a quote — it stays in Inquiries until a payment comes in.</div>';
   var foot = '<button class="btn primary" id="cSaveBtn">Confirm booking</button>';
   openSheet('Convert to Booking', body, foot);
 
@@ -1471,6 +1699,9 @@ function openConvertForm(inquiryId){
   }
   document.getElementById('cEventDate').addEventListener('change', checkConv);
   checkConv();
+  wireChips('cAdvMethod', false, function(){});
+  function syncBtn(){ document.getElementById('cSaveBtn').textContent = (Number(document.getElementById('cAdvance').value)||0) > 0 ? 'Confirm booking' : 'Save as quote'; }
+  document.getElementById('cAdvance').addEventListener('input', syncBtn); syncBtn();
 
   document.getElementById('cSaveBtn').onclick = function(){
     var eventDate = document.getElementById('cEventDate').value;
@@ -1484,13 +1715,16 @@ function openConvertForm(inquiryId){
         id: uid('BK'), inquiryId: inquiryId, createdAt: nowIso(), bookingDate: todayStr(),
         eventDate: eventDate, startTime: document.getElementById('cStartTime').value, endTime: document.getElementById('cEndTime').value,
         eventType: i.eventType, name: i.name, phone: i.phone, altPhone: i.altPhone,
-        location: i.location, channel: i.channel, totalAmount: total, advanceAmount: advance, advanceDate: advDate,
-        payments: advance>0 ? [{id:uid('PAY'), amount:advance, date:advDate, method:'Advance', note:'Advance payment'}] : [],
-        equipmentResourceId:null, transportResourceId:null, extraResourceIds:[], status:'confirmed', calendarAdded:false, notes:''
+        location: i.location, area: i.area||'', partyHall: i.partyHall||'', channel: i.channel, totalAmount: total, advanceAmount: advance, advanceDate: advDate,
+        payments: advance>0 ? [{id:uid('PAY'), amount:advance, date:advDate||todayStr(), method:getChipValue('cAdvMethod', false)||'Cash', note:'Advance payment', isAdvance:true}] : [],
+        discounts:[], equipmentResourceIds:[], transportResourceIds:[], extraResourceIds:[], allocCustom:{equipment:'',transport:'',other:''},
+        status:'confirmed', calendarAdded:false, notes:''
       };
-      DB.bookings.push(b); i.status='converted'; saveData(); closeSheet(); nav('bookings'); toast('Booking created'); openBookingDetail(b.id);
+      DB.bookings.push(b); syncInquiryStatus(i); saveData();
+      if(advance>0){ closeSheet(); nav('bookings'); toast('Booking created'); openBookingDetail(b.id); }
+      else { openInquiryDetail(i.id); if(renderers[currentTab]) renderers[currentTab](); toast('Quote saved — it becomes a booking once an advance is recorded'); }
     };
-    var conflict = findConflictingBooking(eventDate);
+    var conflict = advance>0 ? findConflictingBooking(eventDate) : null;
     if(conflict){
       confirmModal({
         title:'Already booked that day', warn: fmtDate(eventDate)+' already has a booking for '+conflict.name+'.',
@@ -1504,10 +1738,12 @@ function openConvertForm(inquiryId){
 var bookingFilter = 'active';
 function renderBookings(){
   var el = document.getElementById('view-bookings');
+  // Only bookings with money paid show here; quotes with no payment stay under Inquiries ("All" shows them too).
   var list = DB.bookings.slice().sort(function(a,b){ return new Date(b.eventDate)-new Date(a.eventDate); });
-  if(bookingFilter==='active') list = list.filter(function(b){return b.status!=='cancelled';});
-  else if(bookingFilter==='pending') list = list.filter(function(b){return b.status!=='cancelled' && balanceDue(b)>0;});
-  else if(bookingFilter!=='all') list = list.filter(function(b){return b.status===bookingFilter;});
+  if(bookingFilter==='active') list = list.filter(isLiveBooking);
+  else if(bookingFilter==='pending') list = list.filter(function(b){return isLiveBooking(b) && balanceDue(b)>0;});
+  else if(bookingFilter==='cancelled') list = list.filter(function(b){return b.status==='cancelled';});
+  else if(bookingFilter!=='all') list = list.filter(function(b){return b.status===bookingFilter && hasPayment(b);});
 
   el.innerHTML =
     '<h2 class="disp" style="margin:2px 0 12px;">Bookings</h2>' +
@@ -1530,11 +1766,12 @@ function bookingRow(b){
     '<div class="avatar">'+initials(b.name)+'</div>' +
     '<div class="row-main">' +
       '<div class="row-title">'+esc(b.name)+'</div>' +
-      '<div class="row-sub">'+esc(b.eventType)+' · '+fmtDateShort(b.eventDate)+'</div>' +
+      '<div class="row-sub">'+esc(b.eventType)+' · '+fmtDateShort(b.eventDate)+(b.partyHall?' · '+esc(b.partyHall):'')+'</div>' +
     '</div>' +
     '<div class="row-end">' +
-      '<div class="row-amt num">'+fmtMoney(b.totalAmount)+'</div>' +
-      '<span class="badge '+(due>0?'pending':'paid')+'">'+(due>0?'Due '+fmtMoney(due):'Paid')+'</span>' +
+      '<div class="row-amt num">'+fmtMoney(bookingNet(b))+'</div>' +
+      (!hasPayment(b) ? '<span class="badge open">No payment</span>' : b.status==='cancelled' ? '<span class="badge cancelled">cancelled</span>' :
+        '<span class="badge '+(due>0?'pending':'paid')+'">'+(due>0?'Due '+fmtMoney(due):'Paid')+'</span>') +
     '</div>' +
   '</div>';
 }
@@ -1631,14 +1868,15 @@ function bookingCalEvent(b){
   var details = [
     'Client: '+b.name+' ('+(b.phone||'no phone')+')',
     'Event type: '+b.eventType,
-    'Location: '+(b.location||'—'),
+    'Venue: '+(locationText(b)||'—'),
     (b.startTime ? 'Time: '+fmtTime(b.startTime)+(b.endTime?' – '+fmtTime(b.endTime):'') : ''),
-    'Total amount: '+fmtMoney(b.totalAmount)+' | Advance: '+fmtMoney(b.advanceAmount)+' on '+fmtDate(b.advanceDate),
+    'Total amount: '+fmtMoney(bookingNet(b))+(discountTotal(b)?' (after '+fmtMoney(discountTotal(b))+' discount)':'')+' | Advance: '+fmtMoney(b.advanceAmount)+(b.advanceDate?' on '+fmtDate(b.advanceDate):''),
+    allocSummary(b) ? 'Allocated: '+allocSummary(b) : '',
     'Booking date: '+fmtDate(b.bookingDate),
     inq ? ('Inquiry date: '+fmtDate(inq.inquiryDate)+' via '+inq.channel) : '',
     'Balance due: '+fmtMoney(balanceDue(b))
   ].filter(Boolean).join('\n');
-  return {title: b.eventType+' — '+b.name, details: details, location: b.location||'',
+  return {title: b.eventType+' — '+b.name, details: details, location: locationText(b),
     date: b.eventDate, startTime: b.startTime||'', endTime: b.endTime||'', bookingId: b.id};
 }
 function calLabel(){ var m = (DB.settings.calendar||{}).method; return m==='ics' ? 'Add to phone calendar' : 'Add to Google Calendar'; }
@@ -1648,88 +1886,155 @@ function followupCalEvent(f, inquiryName){
     start: start, end: new Date(start.getTime()+30*60000)};
 }
 
+var ALLOC_OTHER = '__other';
+var ALLOC_GROUPS = [
+  {key:'equipment', field:'equipmentResourceIds', label:'Equipment setup', chip:'bkEquip', types:['equipment'], empty:'No equipment added yet'},
+  {key:'transport', field:'transportResourceIds', label:'Transport', chip:'bkTransport', types:['transport'], empty:'No transport added yet'},
+  {key:'other', field:'extraResourceIds', label:'Other resources / crew', chip:'bkOther', types:['crew','other'], empty:'No crew or other resources added yet'}
+];
+function moneyTag(r){
+  var amt = Number(r.amount)||0;
+  if(r.flow==='in') return ' (+'+fmtMoney(amt)+')';
+  if(r.flow==='out') return ' (−'+fmtMoney(amt)+')';
+  return '';
+}
+function allocGroupHtml(g, b){
+  var list = DB.resources.filter(function(r){ return g.types.indexOf(r.type)>-1; });
+  var sel = b[g.field] || [], custom = (b.allocCustom||{})[g.key] || '';
+  var html = '<div class="field"><label>'+esc(g.label)+' <span style="opacity:.6;text-transform:none;">— pick any number</span></label><div class="chipwrap" id="'+g.chip+'">';
+  list.forEach(function(r){
+    html += '<button type="button" class="chip'+(sel.indexOf(r.id)>-1?' sel':'')+'" data-val="'+esc(r.id)+'">'+esc(r.name)+esc(moneyTag(r))+(r.active?'':' · inactive')+'</button>';
+  });
+  html += '<button type="button" class="chip'+(custom?' sel':'')+'" data-val="'+ALLOC_OTHER+'">Other</button></div>' +
+    (list.length ? '' : '<div class="hint">'+esc(g.empty)+' — add them under Resources, or tap Other to type one in.</div>') +
+    otherBox(g.chip+'Custom', 'Type something new, e.g. Smoke machine', !!custom) + '</div>';
+  return html;
+}
+function wireAllocGroup(g, b){
+  wireChips(g.chip, true, function(vals){
+    document.getElementById(g.chip+'Custom_wrap').style.display = vals.indexOf(ALLOC_OTHER)>-1 ? '' : 'none';
+  });
+  document.getElementById(g.chip+'Custom').value = (b.allocCustom||{})[g.key] || '';
+}
+function allocSummary(b){
+  var names = allocatedResources(b).map(function(r){return r.name;});
+  ['equipment','transport','other'].forEach(function(k){ var c = (b.allocCustom||{})[k]; if(c) names.push(c); });
+  return names.join(', ');
+}
+function paymentRowsHtml(b, ctx){
+  return (b.payments||[]).slice().sort(function(x,y){return (x.date||'').localeCompare(y.date||'');}).map(function(p){
+    return '<div class="kv tap" onclick="openPaymentForm(\''+b.id+'\',\''+p.id+'\',\''+(ctx||'')+'\')"><span class="k">'+fmtDate(p.date)+' · '+esc(p.method||'—')+(p.isAdvance?' · Advance':'')+(p.note && p.note!=='Advance payment'?' — '+esc(p.note):'')+'<span class="edit-ic">Edit</span></span><span class="v">'+fmtMoney(p.amount)+'</span></div>';
+  }).join('');
+}
+
 function openBookingDetail(id){
   var b = DB.bookings.find(function(x){return x.id===id;});
   if(!b) return;
   var inq = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
   var fups = inq ? DB.followups.filter(function(f){return f.inquiryId===inq.id;}) : [];
-  var due = balanceDue(b);
+  var due = balanceDue(b), paid = hasPayment(b), disc = discountTotal(b), resIn = resourceMoney(b,'in');
 
+  // Every timeline entry opens the form that edits it.
   var timeline = '<div class="timeline">';
-  if(inq) timeline += '<div class="tl-item"><div class="tl-date">'+fmtDate(inq.inquiryDate)+'</div><div class="tl-body">Inquiry received via '+esc(inq.channel)+'</div></div>';
+  if(inq) timeline += '<div class="tl-item tap" onclick="editInquiry(\''+inq.id+'\')"><div class="tl-date">'+fmtDate(inq.inquiryDate)+'</div><div class="tl-body">Inquiry received via '+esc(inq.channel)+'</div></div>';
   fups.forEach(function(f){
-    timeline += '<div class="tl-item"><div class="tl-date">'+fmtDateTime(f.dueAt)+'</div><div class="tl-body">Follow-up: '+esc(f.note||'—')+(f.done?' (done)':'')+'</div></div>';
+    timeline += '<div class="tl-item tap" onclick="openFollowupForm(\''+inq.id+'\',\''+f.id+'\',\''+b.id+'\')"><div class="tl-date">'+fmtDateTime(f.dueAt)+'</div><div class="tl-body">Follow-up: '+esc(f.note||'—')+(f.done?' (done)':'')+'</div></div>';
   });
-  timeline += '<div class="tl-item"><div class="tl-date">'+fmtDate(b.bookingDate)+'</div><div class="tl-body">Booking confirmed — '+fmtMoney(b.totalAmount)+' total, '+fmtMoney(b.advanceAmount)+' advance</div></div>';
-  (b.payments||[]).forEach(function(p){
-    if(p.note==='Advance payment') return;
-    timeline += '<div class="tl-item"><div class="tl-date">'+fmtDate(p.date)+'</div><div class="tl-body">Payment received: '+fmtMoney(p.amount)+' ('+esc(p.method)+')</div></div>';
+  timeline += '<div class="tl-item tap" onclick="openBookingEditForm(\''+b.id+'\')"><div class="tl-date">'+fmtDate(b.bookingDate)+'</div><div class="tl-body">'+(paid?'Booking confirmed':'Quote saved')+' — '+fmtMoney(b.totalAmount)+' total</div></div>';
+  (b.payments||[]).slice().sort(function(x,y){return (x.date||'').localeCompare(y.date||'');}).forEach(function(p){
+    timeline += '<div class="tl-item tap" onclick="openPaymentForm(\''+b.id+'\',\''+p.id+'\')"><div class="tl-date">'+fmtDate(p.date)+'</div><div class="tl-body">'+(p.isAdvance||p.note==='Advance payment'?'Advance':'Payment')+' received: '+fmtMoney(p.amount)+' ('+esc(p.method||'—')+')</div></div>';
+  });
+  (b.discounts||[]).forEach(function(d){
+    timeline += '<div class="tl-item tap" onclick="openDiscountForm(\''+b.id+'\',\''+d.id+'\')"><div class="tl-date">'+fmtDate(d.date)+'</div><div class="tl-body">Discount given: '+fmtMoney(d.amount)+(d.note?' — '+esc(d.note):'')+'</div></div>';
   });
   timeline += '</div>';
 
-  var equipRes = DB.resources.filter(function(r){return r.type==='equipment';});
-  var transRes = DB.resources.filter(function(r){return r.type==='transport';});
-  var otherRes = DB.resources.filter(function(r){return r.type==='crew'||r.type==='other';});
-
   var body =
+    (!paid ? '<div class="card" style="margin-bottom:14px;border-color:var(--warn);">' +
+        '<div style="font-weight:700;color:var(--warn);margin-bottom:4px;">Quote — no payment yet</div>' +
+        '<div class="hint" style="margin:0 0 10px;">This is still an inquiry. It becomes a booking as soon as you record an advance or any payment.</div>' +
+        '<button class="btn primary sm" style="width:100%" onclick="openPaymentForm(\''+b.id+'\')">+ Record advance</button>' +
+      '</div>' : '') +
     '<div class="card" style="margin-bottom:14px;">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
-        '<div style="font-weight:700;font-size:16px;">'+esc(b.name)+'</div><span class="badge '+b.status+'">'+b.status+'</span>' +
+        '<div style="font-weight:700;font-size:16px;">'+esc(b.name)+'</div><span class="badge '+(paid?b.status:'open')+'">'+(paid?b.status:'quote')+'</span>' +
       '</div>' +
       '<div class="kv"><span class="k">Event</span><span class="v">'+esc(b.eventType)+' · '+fmtDate(b.eventDate)+'</span></div>' +
       (b.startTime ? '<div class="kv"><span class="k">Time</span><span class="v">'+fmtTime(b.startTime)+(b.endTime?' – '+fmtTime(b.endTime):'')+'</span></div>' : '') +
-      '<div class="kv"><span class="k">Location</span><span class="v">'+esc(b.location||'—')+'</span></div>' +
-      '<div class="kv"><span class="k">Phone</span><span class="v">'+esc(b.phone||'—')+'</span></div>' +
-      '<div class="kv"><span class="k">Total</span><span class="v">'+fmtMoney(b.totalAmount)+'</span></div>' +
+      '<div class="kv"><span class="k">Party hall</span><span class="v">'+esc(b.partyHall||'—')+'</span></div>' +
+      '<div class="kv"><span class="k">Location</span><span class="v">'+esc(b.location||'—')+(b.area?' · '+esc(b.area):'')+'</span></div>' +
+      '<div class="kv"><span class="k">Phone</span><span class="v">'+esc(b.phone||'—')+(b.altPhone?' / '+esc(b.altPhone):'')+'</span></div>' +
+      '<div class="kv"><span class="k">Booking amount</span><span class="v">'+fmtMoney(b.totalAmount)+'</span></div>' +
+      (disc ? '<div class="kv"><span class="k">Discounts</span><span class="v" style="color:var(--bad)">−'+fmtMoney(disc)+'</span></div>' : '') +
+      (resIn ? '<div class="kv"><span class="k">Add-on resources (money in)</span><span class="v">+'+fmtMoney(resIn)+'</span></div>' : '') +
+      ((disc||resIn) ? '<div class="kv"><span class="k"><b>Client pays</b></span><span class="v">'+fmtMoney(bookingNet(b))+'</span></div>' : '') +
       '<div class="kv"><span class="k">Paid so far</span><span class="v" style="color:var(--good)">'+fmtMoney(paidSoFarAll(b))+'</span></div>' +
       '<div class="kv"><span class="k">Balance due</span><span class="v" style="color:'+(due>0?'var(--warn)':'var(--good)')+'">'+fmtMoney(due)+'</span></div>' +
+      (b.notes ? '<div class="kv"><span class="k">Notes</span><span class="v" style="text-align:right;max-width:60%;">'+esc(b.notes)+'</span></div>' : '') +
     '</div>' +
     '<div style="margin-bottom:14px;">'+calButton(bookingCalEvent(b), calLabel()+(b.calendarAdded?' again':''), 'btn ghost')+
       (b.startTime ? '' : '<div class="hint" style="margin-top:6px;">No start time set, so this goes in as an all-day event. Tap Edit (top right) to add a time.</div>')+'</div>' +
-    '<div class="section-title">Timeline</div>' +
+    '<div class="section-title">Timeline <span style="opacity:.6;text-transform:none;font-weight:600;">— tap an entry to edit</span></div>' +
     '<div class="card" style="margin-bottom:14px;">'+timeline+'</div>' +
     '<div class="section-title">Allocation</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
-      '<div class="field"><label>Equipment setup</label>' + chips('bkEquip', equipRes.map(function(r){return r.name;}).concat(equipRes.length?['None']:['No equipment added yet']), resNameOrDefault(b.equipmentResourceId, equipRes)) + '</div>' +
-      '<div class="field"><label>Transport</label>' + chips('bkTransport', transRes.map(function(r){return r.name;}).concat(transRes.length?['None']:['No transport added yet']), resNameOrDefault(b.transportResourceId, transRes)) + '</div>' +
-      (otherRes.length ? '<div class="field"><label>Other resources / crew</label>' + chips('bkOther', otherRes.map(function(r){return r.name;}), otherRes.filter(function(r){return (b.extraResourceIds||[]).indexOf(r.id)>-1;}).map(function(r){return r.name;}), true) + '</div>' : '') +
+      ALLOC_GROUPS.map(function(g){ return allocGroupHtml(g, b); }).join('') +
       '<button class="btn ghost sm" style="width:100%;margin-top:4px;" onclick="saveAllocation(\''+b.id+'\')">Save allocation</button>' +
     '</div>' +
-    '<div class="section-title">Payments</div>' +
+    '<div class="section-title">Payments <span style="opacity:.6;text-transform:none;font-weight:600;">— tap one to edit</span></div>' +
     '<div class="card" style="margin-bottom:14px;">' +
-      (b.payments&&b.payments.length ? b.payments.map(function(p){
-        return '<div class="kv"><span class="k">'+fmtDate(p.date)+' · '+esc(p.method)+(p.note?' — '+esc(p.note):'')+'</span><span class="v">'+fmtMoney(p.amount)+'</span></div>';
-      }).join('') : emptyState('No payments recorded','')) +
-      (due>0 ? '<button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="openPaymentForm(\''+b.id+'\')">+ Add payment</button>' : '') +
+      ((b.payments||[]).length ? paymentRowsHtml(b) : emptyState('No payments recorded','')) +
+      (due>0 || !paid ? '<button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="openPaymentForm(\''+b.id+'\')">'+(paid?'+ Add payment':'+ Record advance')+'</button>' : '') +
+    '</div>' +
+    '<div class="section-title">Discounts</div>' +
+    '<div class="card" style="margin-bottom:14px;">' +
+      ((b.discounts||[]).length ? b.discounts.map(function(d){
+        return '<div class="kv tap" onclick="openDiscountForm(\''+b.id+'\',\''+d.id+'\')"><span class="k">'+fmtDate(d.date)+(d.note?' — '+esc(d.note):'')+'<span class="edit-ic">Edit</span></span><span class="v" style="color:var(--bad)">−'+fmtMoney(d.amount)+'</span></div>';
+      }).join('') + '<div class="kv"><span class="k"><b>Total discount</b></span><span class="v">'+fmtMoney(disc)+'</span></div>'
+        : '<div class="hint" style="margin:0;">No discount given. A discount lowers what the client pays and the revenue counted for this event.</div>') +
+      '<button class="btn ghost sm" style="width:100%;margin-top:10px;" onclick="openDiscountForm(\''+b.id+'\')">+ Add discount</button>' +
     '</div>' +
     bookingSpendCardHtml(b) +
     '<div class="section-title">Status</div>' +
     '<div class="btnrow">' +
-      (b.status!=='completed' ? '<button class="btn ghost" onclick="setBookingStatus(\''+b.id+'\',\'completed\')">Mark completed</button>' : '') +
+      (b.status!=='completed' ? '<button class="btn ghost" onclick="setBookingStatus(\''+b.id+'\',\'completed\')">Mark completed</button>' : '<button class="btn ghost" onclick="setBookingStatus(\''+b.id+'\',\'confirmed\')">Mark not completed</button>') +
       (b.status!=='cancelled' ? '<button class="btn danger" onclick="cancelBooking(\''+b.id+'\')">Cancel</button>' : '<button class="btn ghost" onclick="setBookingStatus(\''+b.id+'\',\'confirmed\')">Reinstate</button>') +
     '</div>';
 
-  openSheet('Booking', body);
+  openSheet(paid ? 'Booking' : 'Quote', body);
   setSheetHeadExtra('<button class="btn ghost sm" onclick="openBookingEditForm(\''+b.id+'\')">Edit</button>');
-  wireChips('bkEquip', false, function(){});
-  wireChips('bkTransport', false, function(){});
-  if(otherRes.length) wireChips('bkOther', true, function(){});
+  ALLOC_GROUPS.forEach(function(g){ wireAllocGroup(g, b); });
 }
 function openBookingEditForm(id){
   var b = DB.bookings.find(function(x){return x.id===id;});
   if(!b) return;
+  var etSel = EVENT_TYPES.indexOf(b.eventType)>-1 ? b.eventType : 'Other';
+  var etOther = etSel==='Other' && b.eventType!=='Other' ? String(b.eventType||'').replace(/^Other:\s*/,'') : '';
   var body =
+    '<div class="field"><label>Client name</label><input type="text" id="beName" value="'+esc(b.name||'')+'"></div>' +
+    '<div class="field"><label>Phone</label><input type="tel" id="bePhone" value="'+esc(b.phone||'')+'"></div>' +
+    '<div class="field"><label>Alternate contact <span style="opacity:.6">(optional)</span></label><input type="tel" id="beAltPhone" value="'+esc(b.altPhone||'')+'"></div>' +
+    '<div class="field"><label>Event type</label>' + chips('beEventType', EVENT_TYPES, etSel) + otherBox('beEventTypeOther', 'Type the event type', etSel==='Other') + '</div>' +
+    '<div class="field"><label>Party hall / venue name <span style="opacity:.6">(optional)</span></label><input type="text" id="beHall" value="'+esc(b.partyHall||'')+'"></div>' +
+    locationPickerHtml('be', b.location, b.area) +
+    '<div class="field"><label>Booking date</label><input type="date" id="beBkDate" value="'+esc(b.bookingDate||'')+'"></div>' +
     '<div class="field"><label>Event date</label><input type="date" id="beDate" value="'+esc(b.eventDate)+'"></div>' +
     '<div style="display:flex;gap:8px;">' +
       '<div class="field" style="flex:1"><label>Start time</label><input type="time" id="beStart" value="'+esc(b.startTime||'')+'"></div>' +
       '<div class="field" style="flex:1"><label>End time <span style="opacity:.6">(optional)</span></label><input type="time" id="beEnd" value="'+esc(b.endTime||'')+'"></div>' +
     '</div>' +
     '<div id="beConflict"></div>' +
-    '<div class="field"><label>Location</label><input type="text" id="beLoc" value="'+esc(b.location||'')+'"></div>' +
-    '<div class="field"><label>Total amount (₹)</label><input type="number" id="beTotal" value="'+(Number(b.totalAmount)||0)+'"></div>' +
+    '<div class="field"><label>Booking amount (₹)</label><input type="number" id="beTotal" value="'+(Number(b.totalAmount)||0)+'"></div>' +
+    '<div class="hint" style="margin:-8px 0 14px;">Before discounts. Payments and discounts are edited from their own sections on the booking.</div>' +
+    '<div class="field"><label>Status</label>' + chips('beStatus', ['Confirmed','Completed','Cancelled'], b.status.charAt(0).toUpperCase()+b.status.slice(1)) + '</div>' +
     '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="beNotes">'+esc(b.notes||'')+'</textarea></div>' +
     (b.calendarAdded ? '<div class="hint" style="margin-bottom:10px;">Already added to your calendar? After changing the date or time, update or delete the old calendar entry and add it again.</div>' : '');
-  openSheet('Edit Booking', body, '<button class="btn primary" id="beSave">Save changes</button>');
+  openSheet(hasPayment(b) ? 'Edit Booking' : 'Edit Quote', body, '<button class="btn primary" id="beSave">Save changes</button>');
+  if(etOther) document.getElementById('beEventTypeOther').value = etOther;
+  wireChips('beEventType', false, function(){});
+  wireOtherBox('beEventType', 'beEventTypeOther', ['Other']);
+  wireChips('beStatus', false, function(){});
+  wireLocationPicker('be');
   function chk(){
     var d = document.getElementById('beDate').value, c = d ? findConflictingBooking(d, b.id) : null;
     document.getElementById('beConflict').innerHTML = c ? '<div class="modal warnbox" style="margin:0 0 16px;padding:11px 13px;">Already booked on '+fmtDate(d)+': <b>'+esc(c.name)+'</b>.</div>' : '';
@@ -1737,58 +2042,131 @@ function openBookingEditForm(id){
   document.getElementById('beDate').addEventListener('change', chk); chk();
   document.getElementById('beSave').onclick = function(){
     var d = document.getElementById('beDate').value, total = Number(document.getElementById('beTotal').value)||0;
+    var name = document.getElementById('beName').value.trim();
+    var loc = readLocationPicker('be', true);
+    var eventType = chipValueWithOther('beEventType','beEventTypeOther',['Other']);
+    var status = (getChipValue('beStatus', false)||'Confirmed').toLowerCase();
+    if(!name){ toast('Enter the client name'); return; }
     if(!d){ toast('Pick the event date'); return; }
-    if(total<=0){ toast('Enter the total amount'); return; }
+    if(total<=0){ toast('Enter the booking amount'); return; }
+    if(!eventType){ toast('Pick an event type'); return; }
+    if(loc.error){ toast(loc.error); return; }
+    b.name = name; b.phone = document.getElementById('bePhone').value.trim(); b.altPhone = document.getElementById('beAltPhone').value.trim();
+    b.eventType = eventType; b.partyHall = document.getElementById('beHall').value.trim();
+    b.location = loc.location; b.area = loc.area;
+    b.bookingDate = document.getElementById('beBkDate').value || b.bookingDate;
     b.eventDate = d; b.startTime = document.getElementById('beStart').value; b.endTime = document.getElementById('beEnd').value;
-    b.location = document.getElementById('beLoc').value.trim(); b.totalAmount = total;
+    b.totalAmount = total; b.status = status;
     b.notes = document.getElementById('beNotes').value.trim(); b.updatedAt = nowIso();
-    saveData(); openBookingDetail(b.id); if(renderers[currentTab]) renderers[currentTab](); toast('Booking updated');
+    var inq = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
+    if(inq){ // keep the client details the same in both places
+      inq.name = b.name; inq.phone = b.phone; inq.altPhone = b.altPhone; inq.eventType = b.eventType;
+      inq.partyHall = b.partyHall; inq.location = b.location; inq.area = b.area; inq.updatedAt = nowIso();
+    }
+    saveData(); openBookingDetail(b.id); if(renderers[currentTab]) renderers[currentTab](); toast('Saved');
   };
-}
-function resNameOrDefault(resId, list){
-  var r = list.find(function(x){return x.id===resId;});
-  return r ? r.name : (list.length ? 'None' : (list.length?'None':'No equipment added yet'));
 }
 function saveAllocation(bookingId){
   var b = DB.bookings.find(function(x){return x.id===bookingId;});
-  var equipName = getChipValue('bkEquip', false);
-  var transName = getChipValue('bkTransport', false);
-  var equipRes = DB.resources.find(function(r){return r.type==='equipment' && r.name===equipName;});
-  var transRes = DB.resources.find(function(r){return r.type==='transport' && r.name===transName;});
-  b.equipmentResourceId = equipRes ? equipRes.id : null;
-  b.transportResourceId = transRes ? transRes.id : null;
-  var otherWrap = document.getElementById('bkOther');
-  if(otherWrap){
-    var names = getChipValue('bkOther', true);
-    b.extraResourceIds = DB.resources.filter(function(r){return names.indexOf(r.name)>-1;}).map(function(r){return r.id;});
-  }
-  saveData(); toast('Allocation saved');
+  if(!b) return;
+  b.allocCustom = b.allocCustom || {};
+  ALLOC_GROUPS.forEach(function(g){
+    var vals = getChipValue(g.chip, true);
+    b[g.field] = vals.filter(function(v){ return v!==ALLOC_OTHER && DB.resources.some(function(r){return r.id===v;}); });
+    b.allocCustom[g.key] = vals.indexOf(ALLOC_OTHER)>-1 ? document.getElementById(g.chip+'Custom').value.trim() : '';
+  });
+  saveData(); openBookingDetail(bookingId); if(renderers[currentTab]) renderers[currentTab](); toast('Allocation saved');
 }
-function openPaymentForm(bookingId){
+// ctx 'inquiry' = opened from the inquiry screen (go back there while it's still an inquiry)
+function openPaymentForm(bookingId, payId, ctx){
   var b = DB.bookings.find(function(x){return x.id===bookingId;});
+  if(!b) return;
+  var p = payId ? (b.payments||[]).find(function(x){return x.id===payId;}) : null;
+  if(payId && !p) return;
   var due = balanceDue(b);
+  var first = !hasPayment(b);
+  var isAdv = p ? !!(p.isAdvance || p.note==='Advance payment' || p.method==='Advance') : first;
+  var methods = PAY_METHODS.slice();
+  if(p && p.method && p.method!=='Advance' && methods.indexOf(p.method)===-1) methods.push(p.method);
+  var method = p ? (p.method==='Advance' ? 'Cash' : p.method) : (first ? 'UPI' : 'Cash');
+  var amtVal = p ? (Number(p.amount)||0) : (first ? '' : due);
   var body =
-    '<div class="hint" style="margin-bottom:14px;">Balance due: <b>'+fmtMoney(due)+'</b></div>' +
-    '<div class="field"><label>Amount (₹)</label><input type="number" id="pAmt" value="'+due+'"></div>' +
-    '<div class="field"><label>Date</label><input type="date" id="pDate" value="'+todayStr()+'"></div>' +
-    '<div class="field"><label>Method</label>' + chips('pMethod', PAY_METHODS, 'Cash') + '</div>' +
-    '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="pNote" placeholder="Anything else to remember"></textarea></div>';
-  var foot = '<button class="btn primary" id="pSaveBtn">Record payment</button>';
-  openSheet('Add Payment', body, foot);
+    '<div class="hint" style="margin-bottom:14px;">Client pays <b>'+fmtMoney(bookingNet(b))+'</b> · balance due <b>'+fmtMoney(due)+'</b>'+(p?' (before this edit)':'')+'</div>' +
+    '<div class="field"><label>Payment type</label>' + chips('pKind', ['Advance','Payment'], isAdv?'Advance':'Payment') + '</div>' +
+    '<div class="field"><label>Amount (₹)</label><input type="number" id="pAmt" value="'+amtVal+'" placeholder="e.g. 5000"></div>' +
+    '<div class="field"><label>Date</label><input type="date" id="pDate" value="'+esc(p ? p.date : todayStr())+'"></div>' +
+    '<div class="field"><label>Method</label>' + chips('pMethod', methods, method) + '</div>' +
+    '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="pNote" placeholder="Anything else to remember">'+esc(p && p.note!=='Advance payment' ? (p.note||'') : '')+'</textarea></div>' +
+    (p ? '<div class="hint">Deleting the only payment moves this back to Inquiries (e.g. the advance was cancelled or refunded).</div>' : '');
+  var foot = p ? '<div class="btnrow"><button class="btn danger" id="pDelBtn">Delete</button><button class="btn primary" id="pSaveBtn">Save changes</button></div>'
+               : '<button class="btn primary" id="pSaveBtn">Record payment</button>';
+  openSheet(p ? 'Edit Payment' : (first ? 'Record Advance' : 'Add Payment'), body, foot);
+  wireChips('pKind', false, function(){});
   wireChips('pMethod', false, function(){});
+  function back(){
+    if(ctx==='inquiry' && !hasPayment(b) && b.inquiryId) openInquiryDetail(b.inquiryId);
+    else openBookingDetail(bookingId);
+    if(renderers[currentTab]) renderers[currentTab]();
+  }
   document.getElementById('pSaveBtn').onclick = function(){
     var amt = Number(document.getElementById('pAmt').value)||0;
-    var method = getChipValue('pMethod', false);
+    var m = getChipValue('pMethod', false);
     if(amt<=0){ toast('Enter an amount'); return; }
-    if(!method){ toast('Pick a payment method'); return; }
+    if(!m){ toast('Pick a payment method'); return; }
+    var adv = getChipValue('pKind', false)==='Advance';
+    var note = document.getElementById('pNote').value.trim();
     b.payments = b.payments || [];
-    b.payments.push({id:uid('PAY'), amount:amt, date:document.getElementById('pDate').value||todayStr(), method:method, note:document.getElementById('pNote').value.trim()});
-    saveData(); openBookingDetail(bookingId); toast('Payment recorded');
+    var rec = p || {id:uid('PAY')};
+    rec.amount = amt; rec.date = document.getElementById('pDate').value || todayStr(); rec.method = m;
+    rec.isAdvance = adv; rec.note = note || (adv ? 'Advance payment' : '');
+    if(p) rec.updatedAt = nowIso(); else b.payments.push(rec);
+    if(adv) b.payments.forEach(function(x){ if(x!==rec && x.isAdvance){ x.isAdvance = false; if(x.note==='Advance payment') x.note = ''; } });
+    afterPaymentChange(b); saveData(); back();
+    toast(p ? 'Payment updated' : 'Payment recorded');
+  };
+  if(p) document.getElementById('pDelBtn').onclick = function(){
+    var last = (b.payments||[]).length===1;
+    confirmModal({title:'Delete this payment?', message:fmtMoney(p.amount)+' on '+fmtDate(p.date)+'.',
+      warn: last ? 'This is the only payment — the booking will move back to Inquiries as a quote.' : '',
+      okText:'Delete', danger:true,
+      onOk:function(){
+        b.payments = b.payments.filter(function(x){return x.id!==p.id;});
+        afterPaymentChange(b); saveData(); back(); if(!last) toast('Payment deleted');
+      }});
+  };
+}
+function openDiscountForm(bookingId, discId){
+  var b = DB.bookings.find(function(x){return x.id===bookingId;});
+  if(!b) return;
+  b.discounts = b.discounts || [];
+  var d = discId ? b.discounts.find(function(x){return x.id===discId;}) : null;
+  if(discId && !d) return;
+  var body =
+    '<div class="hint" style="margin-bottom:14px;">Booking amount <b>'+fmtMoney(b.totalAmount)+'</b> · discounts so far <b>'+fmtMoney(discountTotal(b))+'</b></div>' +
+    '<div class="field"><label>Discount amount (₹)</label><input type="number" id="dAmt" value="'+(d?Number(d.amount)||'':'')+'" placeholder="e.g. 1000"></div>' +
+    '<div class="field"><label>Date</label><input type="date" id="dDate" value="'+esc(d ? d.date : todayStr())+'"></div>' +
+    '<div class="field"><label>Reason <span style="opacity:.6">(optional)</span></label><input type="text" id="dNote" value="'+esc(d?d.note:'')+'" placeholder="e.g. Repeat client, festive offer"></div>';
+  var foot = d ? '<div class="btnrow"><button class="btn danger" id="dDelBtn">Delete</button><button class="btn primary" id="dSaveBtn">Save changes</button></div>'
+               : '<button class="btn primary" id="dSaveBtn">Add discount</button>';
+  openSheet(d ? 'Edit Discount' : 'Add Discount', body, foot);
+  document.getElementById('dSaveBtn').onclick = function(){
+    var amt = Number(document.getElementById('dAmt').value)||0;
+    if(amt<=0){ toast('Enter the discount amount'); return; }
+    var others = discountTotal(b) - (d ? (Number(d.amount)||0) : 0);
+    if(others + amt > (Number(b.totalAmount)||0)){ toast('Discounts can\'t be more than the booking amount'); return; }
+    var rec = d || {id:uid('DSC'), createdAt:nowIso()};
+    rec.amount = amt; rec.date = document.getElementById('dDate').value || todayStr(); rec.note = document.getElementById('dNote').value.trim();
+    if(d) rec.updatedAt = nowIso(); else b.discounts.push(rec);
+    saveData(); openBookingDetail(b.id); if(renderers[currentTab]) renderers[currentTab](); toast(d ? 'Discount updated' : 'Discount added');
+  };
+  if(d) document.getElementById('dDelBtn').onclick = function(){
+    confirmModal({title:'Delete this discount?', message:fmtMoney(d.amount)+(d.note?' — '+d.note:''), okText:'Delete', danger:true,
+      onOk:function(){ b.discounts = b.discounts.filter(function(x){return x.id!==d.id;}); saveData(); openBookingDetail(b.id); if(renderers[currentTab]) renderers[currentTab](); toast('Discount deleted'); }});
   };
 }
 function setBookingStatus(id, status){
   var b = DB.bookings.find(function(x){return x.id===id;});
-  b.status = status; saveData(); openBookingDetail(id); renderBookings();
+  b.status = status; saveData(); openBookingDetail(id); if(renderers[currentTab]) renderers[currentTab]();
 }
 function cancelBooking(id){
   confirmModal({
@@ -1801,7 +2179,7 @@ function cancelBooking(id){
 
 /* ================================ EXPENSES & PROFIT ================================ */
 function expenseTotal(list){ return list.reduce(function(s,e){return s+(Number(e.amount)||0);},0); }
-function bookingRevenue(b){ return b.status==='cancelled' ? 0 : (Number(b.totalAmount)||0); }
+function bookingRevenue(b){ return isLiveBooking(b) ? bookingNet(b) : 0; }
 function expensesFor(bookingId){ return DB.expenses.filter(function(e){return e.bookingId===bookingId;}); }
 function byTypeRows(list){
   var map = {};
@@ -1810,12 +2188,17 @@ function byTypeRows(list){
 }
 function profitColor(v){ return v>=0 ? 'var(--good)' : 'var(--bad)'; }
 function spendTotals(){
-  var active = DB.bookings.filter(function(b){return b.status!=='cancelled';});
-  var revenue = active.reduce(function(s,b){return s+(Number(b.totalAmount)||0);},0);
+  var active = liveBookings();
+  var revenue = active.reduce(function(s,b){return s+bookingNet(b);},0);
   var collected = active.reduce(function(s,b){return s+paidSoFarAll(b);},0);
-  var total = expenseTotal(DB.expenses);
+  var expenses = expenseTotal(DB.expenses);
   var eventSpend = expenseTotal(DB.expenses.filter(function(e){return e.bookingId;}));
-  return {revenue:revenue, collected:collected, total:total, eventSpend:eventSpend, general:total-eventSpend,
+  var resIn = active.reduce(function(s,b){return s+resourceMoney(b,'in');},0);
+  var resOut = active.reduce(function(s,b){return s+resourceMoney(b,'out');},0);
+  var discounts = active.reduce(function(s,b){return s+discountTotal(b);},0);
+  var total = expenses + resOut; // everything that comes off profit
+  return {revenue:revenue, collected:collected, total:total, expenses:expenses, eventSpend:eventSpend, general:expenses-eventSpend,
+    resIn:resIn, resOut:resOut, discounts:discounts,
     profit:revenue-total, cashProfit:collected-total, margin: revenue>0 ? (revenue-total)/revenue*100 : 0};
 }
 function typeBreakdownHtml(list){
@@ -1873,6 +2256,11 @@ function renderExpenses(){
 }
 renderers.expenses = renderExpenses;
 
+// A new expense for an event defaults to that event's date; otherwise today.
+function defaultExpenseDate(bookingId){
+  var b = bookingId ? DB.bookings.find(function(x){return x.id===bookingId;}) : null;
+  return (b && b.eventDate) || todayStr();
+}
 // ctx: '' = back to current tab, 'event' = back to that event's spend summary, 'booking' = back to booking detail
 function openExpenseForm(id, presetBookingId, ctx){
   var e = id ? DB.expenses.find(function(x){return x.id===id;}) : null;
@@ -1889,7 +2277,7 @@ function openExpenseForm(id, presetBookingId, ctx){
     '<div class="field"><label>Expense type</label>' + chips('xType', types.concat([NEW_TYPE_CHIP]), e ? e.type : '') +
       otherBox('xTypeNew', 'Name the new type, e.g. Decor', false) + '</div>' +
     '<div class="field"><label>Amount (₹)</label><input type="number" id="xAmt" inputmode="decimal" value="'+(e?Number(e.amount)||'':'')+'" placeholder="e.g. 2500"></div>' +
-    '<div class="field"><label>Date</label><input type="date" id="xDate" value="'+esc(e?e.date:todayStr())+'"></div>' +
+    '<div class="field"><label>Date</label><input type="date" id="xDate" value="'+esc(e ? e.date : defaultExpenseDate(bookingId))+'"></div>' +
     '<div class="field"><label>For event</label><select id="xBooking">'+opts+'</select></div>' +
     '<div class="field"><label>Paid to / notes <span style="opacity:.6">(optional)</span></label><input type="text" id="xNote" value="'+esc(e?e.note:'')+'" placeholder="e.g. Ravi — sound tech"></div>';
   var foot = (e ? '<div class="btnrow"><button class="btn danger" id="xDelBtn">Delete</button><button class="btn primary" id="xSaveBtn">Save changes</button></div>'
@@ -1897,6 +2285,13 @@ function openExpenseForm(id, presetBookingId, ctx){
   openSheet(e ? 'Edit Expense' : 'Add Expense', body, foot);
   wireChips('xType', false, function(){});
   wireOtherBox('xType', 'xTypeNew', [NEW_TYPE_CHIP]);
+  if(!e){ // picking another event moves the date to that event's date, unless you've typed your own
+    var dateTouched = false;
+    document.getElementById('xDate').addEventListener('change', function(){ dateTouched = true; });
+    document.getElementById('xBooking').addEventListener('change', function(){
+      if(!dateTouched) document.getElementById('xDate').value = defaultExpenseDate(this.value);
+    });
+  }
   function back(bid){
     if(ctx==='event' && bid) openEventSpend(bid);
     else if(ctx==='booking' && bid) openBookingDetail(bid);
@@ -1957,11 +2352,13 @@ function removeExpenseType(idx){
 /* ---- Overall spend summary → per-event list → per-event summary ---- */
 function openSpendSummary(){
   var t = spendTotals();
-  var events = DB.bookings.filter(function(b){ return b.status!=='cancelled' || expensesFor(b.id).length; }).slice().sort(byEventDateDesc);
+  var events = DB.bookings.filter(function(b){ return isLiveBooking(b) || expensesFor(b.id).length; }).slice().sort(byEventDateDesc);
+  var evSpend = 0;
   var rows = events.map(function(b){
-    var spend = expenseTotal(expensesFor(b.id)), rev = bookingRevenue(b), pr = rev - spend;
+    var spend = expenseTotal(expensesFor(b.id)) + (isLiveBooking(b) ? resourceMoney(b,'out') : 0), rev = bookingRevenue(b), pr = rev - spend;
+    evSpend += spend;
     return '<tr onclick="openEventSpend(\''+b.id+'\')">' +
-      '<td>'+fmtDateShort(b.eventDate)+'</td><td>'+esc(b.name)+(b.status==='cancelled'?' <span class="badge cancelled">cancelled</span>':'')+'</td><td>'+esc(b.eventType)+'</td>' +
+      '<td>'+fmtDateShort(b.eventDate)+'</td><td>'+esc(b.name)+(b.status==='cancelled'?' <span class="badge cancelled">cancelled</span>':(!hasPayment(b)?' <span class="badge pending">no payment</span>':''))+'</td><td>'+esc(b.eventType)+'</td>' +
       '<td class="num">'+fmtMoney(rev)+'</td><td class="num">'+fmtMoney(spend)+'</td>' +
       '<td class="num" style="color:'+profitColor(pr)+';font-weight:700">'+fmtMoney(pr)+'</td></tr>';
   }).join('');
@@ -1970,8 +2367,11 @@ function openSpendSummary(){
     '<div class="card" style="margin-bottom:14px;">' +
       '<div class="kv"><span class="k">Revenue (active bookings)</span><span class="v">'+fmtMoney(t.revenue)+'</span></div>' +
       '<div class="kv"><span class="k">Collected so far</span><span class="v" style="color:var(--good)">'+fmtMoney(t.collected)+'</span></div>' +
+      (t.discounts ? '<div class="kv"><span class="k">Discounts given (already taken off revenue)</span><span class="v">'+fmtMoney(t.discounts)+'</span></div>' : '') +
+      (t.resIn ? '<div class="kv"><span class="k">Resources — money in (included in revenue)</span><span class="v" style="color:var(--good)">+'+fmtMoney(t.resIn)+'</span></div>' : '') +
       '<div class="kv"><span class="k">Event expenses</span><span class="v">'+fmtMoney(t.eventSpend)+'</span></div>' +
       '<div class="kv"><span class="k">General expenses (salary, overheads…)</span><span class="v">'+fmtMoney(t.general)+'</span></div>' +
+      '<div class="kv"><span class="k">Resources — money out (complimentary etc.)</span><span class="v">'+fmtMoney(t.resOut)+'</span></div>' +
       '<div class="kv"><span class="k"><b>Total expenses</b></span><span class="v" style="color:var(--warn)">'+fmtMoney(t.total)+'</span></div>' +
       '<div class="kv"><span class="k"><b>Profit after expenses</b></span><span class="v" style="color:'+profitColor(t.profit)+'">'+fmtMoney(t.profit)+(t.revenue>0?' ('+t.margin.toFixed(0)+'%)':'')+'</span></div>' +
       '<div class="kv"><span class="k">Cash profit (collected − expenses)</span><span class="v" style="color:'+profitColor(t.cashProfit)+'">'+fmtMoney(t.cashProfit)+'</span></div>' +
@@ -1982,24 +2382,26 @@ function openSpendSummary(){
     (events.length ? '<div style="overflow-x:auto;margin-bottom:14px;"><table class="dtable"><thead><tr>' +
       '<th>Date</th><th>Client</th><th>Event</th><th class="num">Revenue</th><th class="num">Spend</th><th class="num">Profit</th>' +
       '</tr></thead><tbody>'+rows+'</tbody>' +
-      '<tfoot><tr><td colspan="6">'+events.length+' event(s) &middot; Revenue '+fmtMoney(evRev)+' &middot; Event spend '+fmtMoney(t.eventSpend)+' &middot; Profit before general expenses '+fmtMoney(evRev-t.eventSpend)+'</td></tr></tfoot>' +
+      '<tfoot><tr><td colspan="6">'+events.length+' event(s) &middot; Revenue '+fmtMoney(evRev)+' &middot; Event spend '+fmtMoney(evSpend)+' &middot; Profit before general expenses '+fmtMoney(evRev-evSpend)+'</td></tr></tfoot>' +
       '</table></div>' : emptyState('No bookings yet','')) +
-    '<div class="hint">Profit = revenue from active bookings minus every expense (event and general). Per-event profit only subtracts expenses linked to that event.</div>';
+    '<div class="hint">Revenue = booking amount − discounts + resources marked money in. Profit = revenue minus every expense (event and general) and resources marked money out. Per-event profit only subtracts that event\'s own expenses and money-out resources.</div>';
   openSheet('Spend Summary', body, '<button class="btn primary" onclick="openExpenseForm(null,null,\'summary\')">+ Add expense</button>');
 }
 function openEventSpend(bookingId){
   var b = DB.bookings.find(function(x){return x.id===bookingId;});
   if(!b) return;
   var list = expensesFor(b.id).sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
-  var spend = expenseTotal(list), rev = bookingRevenue(b), pr = rev - spend;
+  var resOut = resourceMoney(b,'out'), resIn = resourceMoney(b,'in'), disc = discountTotal(b);
+  var spend = expenseTotal(list) + resOut, rev = bookingRevenue(b), pr = rev - spend;
   var body =
     '<div class="card" style="margin-bottom:14px;">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
         '<div style="font-weight:700;font-size:16px;">'+esc(b.name)+'</div><span class="badge '+b.status+'">'+b.status+'</span></div>' +
       '<div class="kv"><span class="k">Event</span><span class="v">'+esc(b.eventType)+' · '+fmtDate(b.eventDate)+'</span></div>' +
-      '<div class="kv"><span class="k">Revenue</span><span class="v">'+fmtMoney(rev)+'</span></div>' +
+      '<div class="kv"><span class="k">Revenue'+(disc||resIn?' <span style="opacity:.7">(after discounts'+(resIn?', incl. money-in resources':'')+')</span>':'')+'</span><span class="v">'+fmtMoney(rev)+'</span></div>' +
       '<div class="kv"><span class="k">Collected</span><span class="v" style="color:var(--good)">'+fmtMoney(paidSoFarAll(b))+'</span></div>' +
       '<div class="kv"><span class="k">Balance due</span><span class="v">'+fmtMoney(balanceDue(b))+'</span></div>' +
+      (resOut ? '<div class="kv"><span class="k">Resources — money out</span><span class="v">'+fmtMoney(resOut)+'</span></div>' : '') +
       '<div class="kv"><span class="k"><b>Expenses</b></span><span class="v" style="color:var(--warn)">'+fmtMoney(spend)+'</span></div>' +
       '<div class="kv"><span class="k"><b>Profit</b></span><span class="v" style="color:'+profitColor(pr)+'">'+fmtMoney(pr)+(rev>0?' ('+(pr/rev*100).toFixed(0)+'%)':'')+'</span></div>' +
     '</div>' +
@@ -2014,10 +2416,13 @@ function openEventSpend(bookingId){
   setSheetHeadExtra('<button class="btn ghost sm" onclick="openSpendSummary()">All events</button>');
 }
 function bookingSpendCardHtml(b){
-  var spend = expenseTotal(expensesFor(b.id)), pr = bookingRevenue(b) - spend;
+  var exp = expenseTotal(expensesFor(b.id)), resOut = resourceMoney(b,'out');
+  var spend = exp + resOut, pr = bookingRevenue(b) - spend;
   return '<div class="section-title">Spend &amp; profit</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
-      '<div class="kv"><span class="k">Expenses for this event</span><span class="v" style="color:var(--warn)">'+fmtMoney(spend)+'</span></div>' +
+      '<div class="kv"><span class="k">Expenses for this event</span><span class="v" style="color:var(--warn)">'+fmtMoney(exp)+'</span></div>' +
+      (resOut ? '<div class="kv"><span class="k">Resources — money out</span><span class="v" style="color:var(--warn)">'+fmtMoney(resOut)+'</span></div>' : '') +
+      (!isLiveBooking(b) ? '<div class="hint" style="margin:6px 0 0;">'+(b.status==='cancelled'?'Cancelled':'No payment yet')+' — this event isn\'t counted in revenue or profit.</div>' : '') +
       '<div class="kv"><span class="k">Profit</span><span class="v" style="color:'+profitColor(pr)+'">'+fmtMoney(pr)+'</span></div>' +
       '<div class="btnrow" style="margin-top:10px;">' +
         '<button class="btn ghost sm" onclick="openEventSpend(\''+b.id+'\')">Spend summary</button>' +
@@ -2041,10 +2446,13 @@ function renderResources(){
   el.innerHTML = html;
 }
 function resourceRow(r){
-  var usedCount = DB.bookings.filter(function(b){ return b.status!=='cancelled' && (b.equipmentResourceId===r.id || b.transportResourceId===r.id || (b.extraResourceIds||[]).indexOf(r.id)>-1); }).length;
+  var usedCount = liveBookings().filter(function(b){ return allocatedResources(b).some(function(x){return x.id===r.id;}); }).length;
+  var money = r.flow==='in' ? '<span class="badge paid" style="margin-left:4px;">money in +'+fmtMoney(r.amount)+'</span>'
+            : r.flow==='out' ? '<span class="badge cancelled" style="margin-left:4px;">money out −'+fmtMoney(r.amount)+'</span>' : '';
+  var sub = [r.notes||'', usedCount ? 'used in '+usedCount+' booking(s)' : ''].filter(Boolean).join(' · ');
   return '<div class="list-row">' +
-    '<div class="row-main"><div class="row-title">'+esc(r.name)+(r.active?'':' <span class="badge cancelled" style="margin-left:4px;">inactive</span>')+'</div>' +
-    '<div class="row-sub">'+esc(r.notes||'')+(usedCount?' · used in '+usedCount+' booking(s)':'')+'</div></div>' +
+    '<div class="row-main"><div class="row-title">'+esc(r.name)+(r.active?'':' <span class="badge cancelled" style="margin-left:4px;">inactive</span>')+money+'</div>' +
+    '<div class="row-sub">'+esc(sub)+'</div></div>' +
     '<div class="btnrow" style="width:auto;gap:6px;">' +
       '<button class="iconbtn" onclick="openResourceForm(\''+r.id+'\')"><svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
       '<button class="iconbtn" onclick="deleteResource(\''+r.id+'\')"><svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
@@ -2055,12 +2463,16 @@ function openResourceForm(id){
   var r = id ? DB.resources.find(function(x){return x.id===id;}) : null;
   var body =
     '<div class="field"><label>Type</label>' + chips('rType', RESOURCE_TYPES.map(function(t){return t.label;}), r ? RESOURCE_TYPES.find(function(t){return t.key===r.type;}).label : 'Equipment') + '</div>' +
-    '<div class="field"><label>Name</label><input type="text" id="rName" placeholder="e.g. Setup 4 / New Tempo Traveller" value="'+esc(r?r.name:'')+'"></div>' +
+    '<div class="field"><label>Name</label><input type="text" id="rName" placeholder="e.g. Setup 4 / New Tempo Traveller / Complimentary cake" value="'+esc(r?r.name:'')+'"></div>' +
+    '<div class="field"><label>Money</label>' + chips('rFlow', MONEY_FLOWS.map(function(m){return m.label;}), (MONEY_FLOWS.find(function(m){return m.key===(r?r.flow||'':'');})||MONEY_FLOWS[0]).label) +
+      '<div id="rAmtWrap" style="margin-top:10px;'+(r&&r.flow?'':'display:none;')+'"><input type="number" id="rAmt" placeholder="Amount per booking (₹)" value="'+(r&&r.amount?Number(r.amount):'')+'"></div>' +
+      '<div class="hint">Money in: an add-on the client pays for — added to the booking amount. Money out: a cost such as a complimentary item — taken off profit. Each booking it\'s allocated to counts this amount.</div></div>' +
     '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="rNotes" placeholder="Optional">'+esc(r?r.notes:'')+'</textarea></div>' +
     '<div class="field"><label>Status</label>' + chips('rActive', ['Active','Inactive'], r&&!r.active?'Inactive':'Active') + '</div>';
   var foot = '<button class="btn primary" id="rSaveBtn">'+(r?'Save changes':'Add resource')+'</button>';
   openSheet(r?'Edit Resource':'Add Resource', body, foot);
   wireChips('rType', false, function(){}); wireChips('rActive', false, function(){});
+  wireChips('rFlow', false, function(v){ document.getElementById('rAmtWrap').style.display = (v && v!==MONEY_FLOWS[0].label) ? '' : 'none'; });
   document.getElementById('rSaveBtn').onclick = function(){
     var name = document.getElementById('rName').value.trim();
     if(!name){ toast('Enter a name'); return; }
@@ -2071,8 +2483,11 @@ function openResourceForm(id){
     var typeKey = RESOURCE_TYPES.find(function(t){return t.label===typeLabel;}).key;
     var active = statusLabel !== 'Inactive';
     var notes = document.getElementById('rNotes').value.trim();
-    if(r){ r.type=typeKey; r.name=name; r.notes=notes; r.active=active; }
-    else DB.resources.push({id:uid('RES'), type:typeKey, name:name, notes:notes, active:active, createdAt:nowIso()});
+    var flowObj = MONEY_FLOWS.find(function(m){return m.label===getChipValue('rFlow', false);}) || MONEY_FLOWS[0];
+    var amount = flowObj.key ? (Number(document.getElementById('rAmt').value)||0) : 0;
+    if(flowObj.key && amount<=0){ toast('Enter the amount for '+flowObj.label.toLowerCase()); return; }
+    if(r){ r.type=typeKey; r.name=name; r.notes=notes; r.active=active; r.flow=flowObj.key; r.amount=amount; r.updatedAt=nowIso(); }
+    else DB.resources.push({id:uid('RES'), type:typeKey, name:name, notes:notes, active:active, flow:flowObj.key, amount:amount, createdAt:nowIso()});
     saveData(); closeSheet(); renderResources(); toast('Resource saved');
   };
 }
@@ -2083,8 +2498,8 @@ function deleteResource(id){
     onOk:function(){
       DB.resources = DB.resources.filter(function(r){return r.id!==id;});
       DB.bookings.forEach(function(b){
-        if(b.equipmentResourceId===id) b.equipmentResourceId=null;
-        if(b.transportResourceId===id) b.transportResourceId=null;
+        b.equipmentResourceIds = (b.equipmentResourceIds||[]).filter(function(x){return x!==id;});
+        b.transportResourceIds = (b.transportResourceIds||[]).filter(function(x){return x!==id;});
         b.extraResourceIds = (b.extraResourceIds||[]).filter(function(x){return x!==id;});
       });
       saveData(); renderResources(); toast('Resource deleted');
@@ -2121,8 +2536,8 @@ function renderSearchResults(q){
     box.innerHTML = emptyState('Search everything','Type a name, phone number, email, location, event type, channel or note to find it across inquiries, bookings, resources and follow-ups.');
     return;
   }
-  var inqFields = ['name','phone','altPhone','email','location','eventType','channel','inquiryType','notes','inquiryDate','eventDate','status'];
-  var bkFields = ['name','phone','altPhone','location','eventType','channel','notes','eventDate','bookingDate','status'];
+  var inqFields = ['name','phone','altPhone','email','partyHall','location','area','eventType','channel','inquiryType','notes','inquiryDate','eventDate','status'];
+  var bkFields = ['name','phone','altPhone','partyHall','location','area','eventType','channel','notes','eventDate','bookingDate','status'];
   var resFields = ['name','notes','type'];
 
   var inqMatches = DB.inquiries.filter(function(r){ return searchableText(r, inqFields).indexOf(q)>-1; });
@@ -2137,13 +2552,13 @@ function renderSearchResults(q){
   if(inqMatches.length){
     html += '<div class="section-title">Inquiries ('+inqMatches.length+')</div><div class="card" style="padding:6px 10px;margin-bottom:14px;">' +
       inqMatches.map(function(i){
-        return searchResultRow(initials(i.name), i.name, (i.eventType||'')+' · '+(i.location||'—'), i.status, i.status, "openInquiryDetail('"+i.id+"')");
+        return searchResultRow(initials(i.name), i.name, (i.eventType||'')+' · '+(locationText(i)||'—'), i.status, statusLabel(i.status), "openInquiryDetail('"+i.id+"')");
       }).join('') + '</div>';
   }
   if(bkMatches.length){
-    html += '<div class="section-title">Bookings ('+bkMatches.length+')</div><div class="card" style="padding:6px 10px;margin-bottom:14px;">' +
+    html += '<div class="section-title">Bookings &amp; quotes ('+bkMatches.length+')</div><div class="card" style="padding:6px 10px;margin-bottom:14px;">' +
       bkMatches.map(function(b){
-        return searchResultRow(initials(b.name), b.name, (b.eventType||'')+' · '+fmtDateShort(b.eventDate), b.status, b.status, "openBookingDetail('"+b.id+"')");
+        return searchResultRow(initials(b.name), b.name, (b.eventType||'')+' · '+fmtDateShort(b.eventDate), hasPayment(b)?b.status:'open', hasPayment(b)?b.status:'quote', "openBookingDetail('"+b.id+"')");
       }).join('') + '</div>';
   }
   if(resMatches.length){
@@ -2401,7 +2816,8 @@ function exportExcelBackup(){
       'ID': i.id, 'Created At': i.createdAt,
       'Inquiry Date': i.inquiryDate, 'Client Name': i.name, 'Phone': String(i.phone||''), 'Alternate Phone': String(i.altPhone||''),
       'Email': i.email||'', 'Location': i.location, 'Event Type': i.eventType, 'Event Date': i.eventDate, 'Event Time': i.eventTime||'',
-      'Channel': i.channel, 'Inquiry Type': i.inquiryType, 'Status': i.status, 'Notes': i.notes||''
+      'Channel': i.channel, 'Inquiry Type': i.inquiryType, 'Status': i.status, 'Notes': i.notes||'',
+      'Party Hall': i.partyHall||'', 'Area': i.area||''
     };
   });
 
@@ -2422,12 +2838,14 @@ function exportExcelBackup(){
       'Phone': String(b.phone||''), 'Alternate Phone': String(b.altPhone||''), 'Email': inq ? (inq.email||'') : '', 'Location': b.location||'',
       'Channel': b.channel||'', 'Total Amount': Number(b.totalAmount)||0, 'Advance Amount': Number(b.advanceAmount)||0,
       'Advance Date': b.advanceDate||'', 'Paid So Far': paidSoFarAll(b), 'Balance Due': balanceDue(b),
-      'Equipment ID': b.equipmentResourceId||'', 'Equipment': resourceName(b.equipmentResourceId),
-      'Transport ID': b.transportResourceId||'', 'Transport': resourceName(b.transportResourceId),
+      'Equipment ID': (b.equipmentResourceIds||[]).join(','), 'Equipment': (b.equipmentResourceIds||[]).map(resourceName).filter(Boolean).join(', '),
+      'Transport ID': (b.transportResourceIds||[]).join(','), 'Transport': (b.transportResourceIds||[]).map(resourceName).filter(Boolean).join(', '),
       'Extra Resource IDs': (b.extraResourceIds||[]).join(','),
       'Extra Resources': (b.extraResourceIds||[]).map(resourceName).filter(Boolean).join(', '),
       'Status': b.status, 'Added to Calendar': b.calendarAdded ? 'Yes' : 'No', 'Notes': b.notes||'',
-      'Start Time': b.startTime||'', 'End Time': b.endTime||'', 'Expenses': expenseTotal(expensesFor(b.id)), 'Profit': bookingRevenue(b) - expenseTotal(expensesFor(b.id))
+      'Start Time': b.startTime||'', 'End Time': b.endTime||'', 'Expenses': bookingCosts(b), 'Profit': bookingRevenue(b) - bookingCosts(b),
+      'Party Hall': b.partyHall||'', 'Area': b.area||'', 'Discount': discountTotal(b), 'Client Pays': bookingNet(b),
+      'Booked': hasPayment(b) ? 'Yes' : 'No (quote)', 'Custom Allocation': JSON.stringify(b.allocCustom||{})
     };
   });
 
@@ -2437,7 +2855,7 @@ function exportExcelBackup(){
       paymentsRows.push({
         'ID': p.id, 'Booking ID': b.id,
         'Client Name': b.name, 'Event Date': b.eventDate, 'Payment Date': p.date, 'Amount': Number(p.amount)||0,
-        'Method': p.method||'', 'Note': p.note||''
+        'Method': p.method||'', 'Note': p.note||'', 'Advance': p.isAdvance ? 'Yes' : 'No'
       });
     });
   });
@@ -2448,12 +2866,14 @@ function exportExcelBackup(){
       'Event': b ? (b.name+' — '+b.eventType+' ('+b.eventDate+')') : 'General', 'Notes': e.note||''};
   });
   var resourceRows = DB.resources.map(function(r){
-    return { 'ID': r.id, 'Created At': r.createdAt, 'Type': r.type, 'Name': r.name, 'Notes': r.notes||'', 'Active': r.active ? 'Yes' : 'No' };
+    return { 'ID': r.id, 'Created At': r.createdAt, 'Type': r.type, 'Name': r.name, 'Notes': r.notes||'', 'Active': r.active ? 'Yes' : 'No',
+      'Money': r.flow==='in' ? 'Money in' : r.flow==='out' ? 'Money out' : '', 'Amount': Number(r.amount)||0 };
   });
 
   var health = computeHealth();
-  var activeBookings = DB.bookings.filter(function(b){return b.status!=='cancelled';});
-  var totalRevenue = activeBookings.reduce(function(sum,b){return sum+(Number(b.totalAmount)||0);},0);
+  var activeBookings = liveBookings();
+  var totalRevenue = activeBookings.reduce(function(sum,b){return sum+bookingNet(b);},0);
+  var allCosts = spendTotals().total;
   var summaryRows = [
     ['ReY Events Manager — data export', ''],
     ['Exported at', new Date().toLocaleString('en-IN')],
@@ -2463,8 +2883,8 @@ function exportExcelBackup(){
     ['Total inquiries', DB.inquiries.length],
     ['Total active bookings', activeBookings.length],
     ['Total revenue (active bookings)', totalRevenue],
-    ['Total expenses', expenseTotal(DB.expenses)],
-    ['Profit after expenses', totalRevenue - expenseTotal(DB.expenses)],
+    ['Total expenses (incl. money-out resources)', allCosts],
+    ['Profit after expenses', totalRevenue - allCosts],
     ['Inquiry → booking conversion', (health.convRate*100).toFixed(1)+'%'],
     ['Business health score (0-100)', health.total],
     ['', ''],
@@ -2513,7 +2933,7 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
   var wsInq = XLSX.utils.json_to_sheet(inquiriesRows);
-  wsInq['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:16},{wch:12},{wch:10},{wch:18},{wch:13},{wch:10},{wch:30}];
+  wsInq['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:16},{wch:12},{wch:10},{wch:18},{wch:13},{wch:10},{wch:30},{wch:22},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsInq, 'Inquiries');
 
   var wsFu = XLSX.utils.json_to_sheet(followupRows);
@@ -2521,12 +2941,22 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsFu, 'Follow-ups');
 
   var wsBk = XLSX.utils.json_to_sheet(bookingsRows);
-  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12}];
+  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:12},{wch:12},XLSX_HIDDEN_COL];
   XLSX.utils.book_append_sheet(wb, wsBk, 'Bookings');
 
   var wsPay = XLSX.utils.json_to_sheet(paymentsRows);
-  wsPay['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:20},{wch:12},{wch:12},{wch:10},{wch:12},{wch:26}];
+  wsPay['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:20},{wch:12},{wch:12},{wch:10},{wch:12},{wch:26},{wch:8}];
   XLSX.utils.book_append_sheet(wb, wsPay, 'Payments');
+  var discountRows = [];
+  DB.bookings.forEach(function(b){
+    (b.discounts||[]).forEach(function(d){
+      discountRows.push({'ID': d.id, 'Booking ID': b.id, 'Client Name': b.name, 'Event Date': b.eventDate, 'Date': d.date, 'Amount': Number(d.amount)||0, 'Reason': d.note||''});
+    });
+  });
+  var wsDisc = discountRows.length ? XLSX.utils.json_to_sheet(discountRows)
+    : XLSX.utils.aoa_to_sheet([['ID','Booking ID','Client Name','Event Date','Date','Amount','Reason']]);
+  wsDisc['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:20},{wch:12},{wch:12},{wch:10},{wch:26}];
+  XLSX.utils.book_append_sheet(wb, wsDisc, 'Discounts');
 
   var wsExp = expenseRows.length ? XLSX.utils.json_to_sheet(expenseRows)
     : XLSX.utils.aoa_to_sheet([['ID','Booking ID','Created At','Date','Type','Amount','Event','Notes']]);
@@ -2534,7 +2964,7 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsExp, 'Expenses');
 
   var wsRes = XLSX.utils.json_to_sheet(resourceRows);
-  wsRes['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:26},{wch:8}];
+  wsRes['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:20},{wch:26},{wch:8},{wch:11},{wch:10}];
   XLSX.utils.book_append_sheet(wb, wsRes, 'Resources');
 
   // Very-hidden technical sheets: not shown in Excel's normal Unhide dialog, so a casual
@@ -2612,7 +3042,8 @@ function restoreFromExcelFile(file){
 
       var resources = resRows.map(function(r){
         return {id:String(r['ID']), createdAt:r['Created At']||nowIso(), type:r['Type']||'other', name:r['Name']||'',
-          notes:r['Notes']||'', active: r['Active']!=='No'};
+          notes:r['Notes']||'', active: r['Active']!=='No',
+          flow: r['Money']==='Money in' ? 'in' : r['Money']==='Money out' ? 'out' : '', amount: Number(r['Amount'])||0};
       });
 
       var inquiries = inqRows.map(function(r){
@@ -2620,7 +3051,8 @@ function restoreFromExcelFile(file){
           id:String(r['ID']), createdAt:r['Created At']||nowIso(), inquiryDate:r['Inquiry Date']||todayStr(),
           name:r['Client Name']||'', phone:String(r['Phone']||''), altPhone:String(r['Alternate Phone']||''),
           email:r['Email']||'', location:r['Location']||'', eventType:r['Event Type']||'', eventDate:r['Event Date']||'', eventTime:String(r['Event Time']||''),
-          channel:r['Channel']||'', inquiryType:r['Inquiry Type']||'New Client', status:r['Status']||'open', notes:r['Notes']||''
+          channel:r['Channel']||'', inquiryType:r['Inquiry Type']||'New Client', status:r['Status']||'open', notes:r['Notes']||'',
+          partyHall:r['Party Hall']||'', area:r['Area']||''
         };
       });
 
@@ -2631,6 +3063,7 @@ function restoreFromExcelFile(file){
         };
       });
 
+      function idList(v){ return v ? String(v).split(',').map(function(x){return x.trim();}).filter(Boolean) : []; }
       var bookings = bkRows.map(function(r){
         return {
           id:String(r['ID']), inquiryId:String(r['Inquiry ID']||''), createdAt:r['Created At']||nowIso(),
@@ -2638,8 +3071,10 @@ function restoreFromExcelFile(file){
           name:r['Client Name']||'', phone:String(r['Phone']||''), altPhone:String(r['Alternate Phone']||''),
           location:r['Location']||'', channel:r['Channel']||'',
           totalAmount:Number(r['Total Amount'])||0, advanceAmount:Number(r['Advance Amount'])||0, advanceDate:r['Advance Date']||'',
-          equipmentResourceId: r['Equipment ID'] ? String(r['Equipment ID']) : null,
-          transportResourceId: r['Transport ID'] ? String(r['Transport ID']) : null,
+          equipmentResourceIds: idList(r['Equipment ID']),
+          transportResourceIds: idList(r['Transport ID']),
+          partyHall: r['Party Hall']||'', area: r['Area']||'', discounts: [],
+          allocCustom: (function(){ try{ return r['Custom Allocation'] ? JSON.parse(r['Custom Allocation']) : {}; }catch(e){ return {}; } })(),
           extraResourceIds: r['Extra Resource IDs'] ? String(r['Extra Resource IDs']).split(',').map(function(x){return x.trim();}).filter(Boolean) : [],
           status:r['Status']||'confirmed', calendarAdded: r['Added to Calendar']==='Yes', notes:r['Notes']||'', payments:[],
           startTime:String(r['Start Time']||''), endTime:String(r['End Time']||'')
@@ -2647,7 +3082,11 @@ function restoreFromExcelFile(file){
       });
       payRows.forEach(function(r){
         var b = bookings.find(function(x){return x.id===String(r['Booking ID']);});
-        if(b) b.payments.push({id:String(r['ID']||uid('PAY')), amount:Number(r['Amount'])||0, date:r['Payment Date']||'', method:r['Method']||'', note:r['Note']||''});
+        if(b) b.payments.push({id:String(r['ID']||uid('PAY')), amount:Number(r['Amount'])||0, date:r['Payment Date']||'', method:r['Method']||'', note:r['Note']||'', isAdvance: r['Advance']==='Yes' || r['Note']==='Advance payment'});
+      });
+      if(wb.SheetNames.indexOf('Discounts')>-1) rows('Discounts').forEach(function(r){
+        var b = bookings.find(function(x){return x.id===String(r['Booking ID']);});
+        if(b && r['ID']) b.discounts.push({id:String(r['ID']), amount:Number(r['Amount'])||0, date:r['Date']||'', note:r['Reason']||''});
       });
 
       var expenses = wb.SheetNames.indexOf('Expenses')>-1 ? rows('Expenses').filter(function(r){return r['ID'];}).map(function(r){
@@ -2747,6 +3186,7 @@ window.fabAction = fabAction; window.editInquiry = editInquiry; window.openBooki
 window.openCalendar = openCalendar; window.testCalendar = testCalendar; window.saveCalendarSettings = saveCalendarSettings;
 window.openExpenseForm = openExpenseForm; window.openExpenseTypes = openExpenseTypes; window.removeExpenseType = removeExpenseType;
 window.openSpendSummary = openSpendSummary; window.openEventSpend = openEventSpend;
+window.openDiscountForm = openDiscountForm; window.reopenInquiry = reopenInquiry;
 
 document.addEventListener('DOMContentLoaded', init);
 if(document.readyState==='complete' || document.readyState==='interactive') setTimeout(init, 0);
