@@ -985,6 +985,7 @@ function paidSoFarAll(b){
 function hasPayment(b){ return paidSoFarAll(b) > 0; }
 function isLiveBooking(b){ return b.status!=='cancelled' && hasPayment(b); }
 function liveBookings(){ return DB.bookings.filter(isLiveBooking); }
+function confirmedBookings(){ return liveBookings().filter(function(b){ return b.status==='confirmed'; }); }
 function bookingForInquiry(inqId, d){
   d = d || DB;
   var list = d.bookings.filter(function(b){ return inqId && b.inquiryId===inqId; });
@@ -1040,11 +1041,13 @@ function renderDashboard(){
   var el = document.getElementById('view-dashboard');
   var health = computeHealth();
   var openInq = DB.inquiries.filter(isOpenInquiry).length;
-  var totalBookings = liveBookings().length;
+  // Total events = every paid booking that isn't cancelled (confirmed + completed).
+  // Active bookings = confirmed only — completed events are no longer active.
+  var totalEvents = liveBookings().length;
+  var totalBookings = confirmedBookings().length;
   var totalRevenue = liveBookings().reduce(function(s,b){return s+bookingNet(b);},0);
-  var totalEvents = DB.bookings.filter(function(b){return b.status==='completed' && hasPayment(b);}).length;
   var convRate = health.convRate*100;
-  var avgBooking = totalBookings>0 ? totalRevenue/totalBookings : 0;
+  var avgBooking = totalEvents>0 ? totalRevenue/totalEvents : 0;
   var pendingBookings = liveBookings().filter(function(b){return balanceDue(b)>0;});
   var pendingTotal = pendingBookings.reduce(function(s,b){return s+balanceDue(b);},0);
   var equipPace = clamp(paybackPace('equipment'),0,1.5)*100;
@@ -1072,12 +1075,12 @@ function renderDashboard(){
     '</div>' +
     '<div class="section-title">Overview</div>' +
     '<div class="tiles">' +
-      tile('Total events', totalEvents, 'completed bookings', 'events') +
+      tile('Total events', totalEvents, 'confirmed + completed', 'events') +
       tile('Open inquiries', openInq, 'awaiting follow-up', 'openInquiries') +
-      tile('Active bookings', totalBookings, 'confirmed + completed', 'activeBookings') +
-      tile('Revenue so far', fmtMoney(totalRevenue), 'all active bookings', 'revenue') +
+      tile('Active bookings', totalBookings, 'confirmed (not yet completed)', 'activeBookings') +
+      tile('Revenue so far', fmtMoney(totalRevenue), 'all events (confirmed + completed)', 'revenue') +
       tile('Inquiry → booking', convRate.toFixed(0)+'%', 'conversion rate', 'conversion') +
-      tile('Avg. booking value', fmtMoney(avgBooking), 'revenue per booking', 'avgBooking') +
+      tile('Avg. booking value', fmtMoney(avgBooking), 'revenue per event', 'avgBooking') +
     '</div>' +
     spendDashHtml() +
     '<div class="section-title">Capital payback</div>' +
@@ -1235,16 +1238,15 @@ function openTileDetail(kind){
   var activeBookings = liveBookings().slice().sort(byEventDateDesc);
   var title, html;
   if(kind==='events'){
-    var completed = DB.bookings.filter(function(b){return b.status==='completed' && hasPayment(b);}).slice().sort(byEventDateDesc);
-    title = 'Completed Events'; html = bookingsTableHtml(completed);
+    title = 'Total Events — confirmed + completed'; html = bookingsTableHtml(activeBookings);
   } else if(kind==='openInquiries'){
     var openInqs = DB.inquiries.filter(isOpenInquiry)
       .slice().sort(byEventDateAsc);
     title = 'Open Inquiries'; html = inquiriesTableHtml(openInqs);
   } else if(kind==='activeBookings'){
-    title = 'Active Bookings'; html = bookingsTableHtml(activeBookings);
+    title = 'Active Bookings — confirmed'; html = bookingsTableHtml(confirmedBookings().slice().sort(byEventDateDesc));
   } else if(kind==='revenue'){
-    title = 'Revenue — Active Bookings'; html = bookingsTableHtml(activeBookings);
+    title = 'Revenue — All Events'; html = bookingsTableHtml(activeBookings);
   } else if(kind==='avgBooking'){
     title = 'Booking Values'; html = bookingsTableHtml(activeBookings);
   } else if(kind==='conversion'){
