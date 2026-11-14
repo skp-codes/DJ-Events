@@ -1,6 +1,6 @@
 // Offline support: pages and app files load from cache when there's no connection.
 // Data, sign-in and Netlify endpoints always go to the network and are never cached.
-const CACHE = "rey-events-v4";
+const CACHE = "rey-events-v5";
 const STATIC = ["/app.js", "/theme.js", "/pw-toggle.js", "/vendor/xlsx.full.min.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
