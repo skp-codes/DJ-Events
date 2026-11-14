@@ -1768,7 +1768,7 @@ function renderBookings(){
   var el = document.getElementById('view-bookings');
   // Only bookings with money paid show here; quotes with no payment stay under Inquiries ("All" shows them too).
   var list = DB.bookings.slice().sort(byDateAsc('eventDate'));
-  if(bookingFilter==='active') list = list.filter(isLiveBooking);
+  if(bookingFilter==='active') list = list.filter(function(b){ return isLiveBooking(b) && b.status==='confirmed'; }); // same as the Home "Active bookings" tile
   else if(bookingFilter==='pending') list = list.filter(function(b){return isLiveBooking(b) && balanceDue(b)>0;});
   else if(bookingFilter==='cancelled') list = list.filter(function(b){return b.status==='cancelled';});
   else if(bookingFilter!=='all') list = list.filter(function(b){return b.status===bookingFilter && hasPayment(b);});
