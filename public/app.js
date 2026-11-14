@@ -156,6 +156,10 @@ function migrateData(d){
   if(!Array.isArray(d.settings.expenseTypes)) d.settings.expenseTypes = DEFAULT_EXPENSE_TYPES.slice();
   if(!d.settings.calendar || typeof d.settings.calendar!=='object') d.settings.calendar = {};
   for(var c in def.calendar){ if(!(c in d.settings.calendar)) d.settings.calendar[c] = def.calendar[c]; }
+  d.resources.forEach(function(r){
+    if(r.flow!=='in' && r.flow!=='out') r.flow = '';
+    r.amount = Number(r.amount)||0;
+  });
   d.bookings.forEach(function(b){
     b.payments = Array.isArray(b.payments) ? b.payments : [];
     b.discounts = Array.isArray(b.discounts) ? b.discounts : [];
@@ -166,10 +170,20 @@ function migrateData(d){
     if(!Array.isArray(b.extraResourceIds)) b.extraResourceIds = [];
     if(!b.allocCustom || typeof b.allocCustom!=='object') b.allocCustom = {};
     ['equipment','transport','other'].forEach(function(k){ if(typeof b.allocCustom[k]!=='string') b.allocCustom[k] = ''; });
-  });
-  d.resources.forEach(function(r){
-    if(r.flow!=='in' && r.flow!=='out') r.flow = '';
-    r.amount = Number(r.amount)||0;
+    // Each booking keeps its own copy of the money for every allocated resource, taken when it was
+    // allocated. Changing a resource's amount later never rewrites bookings already made.
+    if(!b.allocCharges || typeof b.allocCharges!=='object') b.allocCharges = {};
+    ['equipmentResourceIds','transportResourceIds','extraResourceIds'].forEach(function(f){
+      b[f] = b[f].filter(function(id){
+        if(b.allocCharges[id]) return true;
+        var r = d.resources.find(function(x){return x.id===id;});
+        if(!r) return false;
+        b.allocCharges[id] = chargeFromResource(r);
+        return true;
+      });
+    });
+    var ids = allocIds(b);
+    Object.keys(b.allocCharges).forEach(function(id){ if(ids.indexOf(id)===-1) delete b.allocCharges[id]; });
   });
   d.inquiries.forEach(function(i){ syncInquiryStatus(i, d); });
   return d;
@@ -1019,12 +1033,21 @@ function afterPaymentChange(b){
 /* ---- Money: discounts lower what the client pays; resources marked "money in" add to it,
    resources marked "money out" (e.g. complimentary items) are a cost against profit. ---- */
 function discountTotal(b){ return (b.discounts||[]).reduce(function(s,x){return s+(Number(x.amount)||0);},0); }
+function allocIds(b){ return [].concat(b.equipmentResourceIds||[], b.transportResourceIds||[], b.extraResourceIds||[]); }
+function chargeFromResource(r){ return {name:r.name, flow:r.flow||'', amount:Number(r.amount)||0}; }
+// This booking's own amount for an allocated resource (falls back to the resource's current values).
+function bookingCharge(b, id){
+  var c = (b.allocCharges||{})[id];
+  if(c) return c;
+  var r = DB.resources.find(function(x){return x.id===id;});
+  return r ? chargeFromResource(r) : {name:'', flow:'', amount:0};
+}
 function allocatedResources(b){
-  var ids = [].concat(b.equipmentResourceIds||[], b.transportResourceIds||[], b.extraResourceIds||[]);
+  var ids = allocIds(b);
   return DB.resources.filter(function(r){ return ids.indexOf(r.id)>-1; });
 }
 function resourceMoney(b, flow){
-  return allocatedResources(b).filter(function(r){return r.flow===flow;}).reduce(function(s,r){return s+(Number(r.amount)||0);},0);
+  return allocIds(b).reduce(function(s,id){ var c = bookingCharge(b,id); return s + (c.flow===flow ? (Number(c.amount)||0) : 0); },0);
 }
 function bookingNet(b){ return Math.max((Number(b.totalAmount)||0) - discountTotal(b), 0) + resourceMoney(b,'in'); }
 function bookingCosts(b){ return expenseTotal(expensesFor(b.id)) + resourceMoney(b,'out'); }
@@ -1136,7 +1159,32 @@ function paybackRow(label, pct, total, kind){
 renderers.dashboard = renderDashboard;
 
 /* ---- Dashboard tile drill-down: tabular detail behind each stat ---- */
-function byEventDateDesc(a,b){ return new Date(b.eventDate)-new Date(a.eventDate); }
+// Every list in the app runs oldest date first (soonest event at the top). Undated items go last.
+function byDateAsc(key){
+  return function(a,b){
+    var ad = a[key] || '', bd = b[key] || '';
+    if(ad!==bd){ if(!ad) return 1; if(!bd) return -1; return ad < bd ? -1 : 1; }
+    return (a.createdAt||'').localeCompare(b.createdAt||'');
+  };
+}
+var byEventDateDesc = byDateAsc('eventDate');
+// Expenses: by the date of the event they belong to; general expenses by their own date.
+function expenseEventDate(e){
+  var b = e.bookingId ? DB.bookings.find(function(x){return x.id===e.bookingId;}) : null;
+  return (b && b.eventDate) || e.date || '';
+}
+function byExpenseEventDate(a,b){
+  var ad = expenseEventDate(a), bd = expenseEventDate(b);
+  if(ad!==bd){ if(!ad) return 1; if(!bd) return -1; return ad < bd ? -1 : 1; }
+  return (a.date||'').localeCompare(b.date||'');
+}
+// Follow-ups: by the event date of their inquiry, then by when they're due.
+function byFollowupEventDate(a,b){
+  var ia = DB.inquiries.find(function(x){return x.id===a.inquiryId;}), ib = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
+  var ad = (ia && ia.eventDate) || '', bd = (ib && ib.eventDate) || '';
+  if(ad!==bd){ if(!ad) return 1; if(!bd) return -1; return ad < bd ? -1 : 1; }
+  return new Date(a.dueAt)-new Date(b.dueAt);
+} // name kept for existing call sites; now ascending
 function bookingsTableHtml(list){
   if(!list.length) return emptyState('Nothing here yet','');
   var rows = list.map(function(b){
@@ -1220,7 +1268,7 @@ function openTileDetail(kind){
     title = 'Completed Events'; html = bookingsTableHtml(completed);
   } else if(kind==='openInquiries'){
     var openInqs = DB.inquiries.filter(isOpenInquiry)
-      .slice().sort(function(a,b){return new Date(a.eventDate)-new Date(b.eventDate);});
+      .slice().sort(byEventDateAsc);
     title = 'Open Inquiries'; html = inquiriesTableHtml(openInqs);
   } else if(kind==='activeBookings'){
     title = 'Active Bookings'; html = bookingsTableHtml(activeBookings);
@@ -1295,12 +1343,12 @@ function renderInquiries(){
   if(inquiryFilter==='duefollowups'){
     el.innerHTML =
       '<h2 class="disp" style="margin:2px 0 12px;">Inquiries</h2>' + chipsHtml +
-      '<div class="hint" style="margin-bottom:10px;">Everything you still need to follow up on, soonest first.</div>' +
+      '<div class="hint" style="margin-bottom:10px;">Everything you still need to follow up on, by event date (soonest first).</div>' +
       '<div class="card" style="padding:6px 10px;">' + renderFollowupTaskRows() + '</div>';
   } else {
     if(INQ_FILTERS.indexOf(inquiryFilter)===-1) inquiryFilter = 'active';
-    var list = DB.inquiries.slice().sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
-    if(inquiryFilter==='all') list.sort(byEventDateAsc);
+    var list = DB.inquiries.slice().sort(byEventDateAsc);
+    if(inquiryFilter==='all'){}
     else if(inquiryFilter==='active') list = list.filter(isOpenInquiry);
     else if(inquiryFilter==='open') list = list.filter(isOpenInquiry).filter(function(i){return i.status==='open';});
     else list = list.filter(function(i){return i.status===inquiryFilter;});
@@ -1317,7 +1365,7 @@ function renderInquiries(){
   });
 }
 function renderFollowupTaskRows(){
-  var due = DB.followups.filter(function(f){return !f.done;}).sort(function(a,b){return new Date(a.dueAt)-new Date(b.dueAt);});
+  var due = DB.followups.filter(function(f){return !f.done;}).sort(byFollowupEventDate);
   if(!due.length) return emptyState('No follow-ups pending', 'Set a reminder from an inquiry, or when creating a new one.');
   return due.map(function(f){
     var inq = DB.inquiries.find(function(x){return x.id===f.inquiryId;});
@@ -1739,7 +1787,7 @@ var bookingFilter = 'active';
 function renderBookings(){
   var el = document.getElementById('view-bookings');
   // Only bookings with money paid show here; quotes with no payment stay under Inquiries ("All" shows them too).
-  var list = DB.bookings.slice().sort(function(a,b){ return new Date(b.eventDate)-new Date(a.eventDate); });
+  var list = DB.bookings.slice().sort(byDateAsc('eventDate'));
   if(bookingFilter==='active') list = list.filter(isLiveBooking);
   else if(bookingFilter==='pending') list = list.filter(function(b){return isLiveBooking(b) && balanceDue(b)>0;});
   else if(bookingFilter==='cancelled') list = list.filter(function(b){return b.status==='cancelled';});
@@ -1903,7 +1951,13 @@ function allocGroupHtml(g, b){
   var sel = b[g.field] || [], custom = (b.allocCustom||{})[g.key] || '';
   var html = '<div class="field"><label>'+esc(g.label)+' <span style="opacity:.6;text-transform:none;">— pick any number</span></label><div class="chipwrap" id="'+g.chip+'">';
   list.forEach(function(r){
-    html += '<button type="button" class="chip'+(sel.indexOf(r.id)>-1?' sel':'')+'" data-val="'+esc(r.id)+'">'+esc(r.name)+esc(moneyTag(r))+(r.active?'':' · inactive')+'</button>';
+    var tagSrc = sel.indexOf(r.id)>-1 ? bookingCharge(b, r.id) : r; // show this booking's amount once allocated
+    html += '<button type="button" class="chip'+(sel.indexOf(r.id)>-1?' sel':'')+'" data-val="'+esc(r.id)+'">'+esc(r.name)+esc(moneyTag(tagSrc))+(r.active?'':' · inactive')+'</button>';
+  });
+  sel.forEach(function(id){ // allocated, but the resource has since been deleted
+    if(list.some(function(r){return r.id===id;})) return;
+    var c = bookingCharge(b, id);
+    html += '<button type="button" class="chip sel" data-val="'+esc(id)+'">'+esc(c.name||'Deleted resource')+esc(moneyTag(c))+' · deleted</button>';
   });
   html += '<button type="button" class="chip'+(custom?' sel':'')+'" data-val="'+ALLOC_OTHER+'">Other</button></div>' +
     (list.length ? '' : '<div class="hint">'+esc(g.empty)+' — add them under Resources, or tap Other to type one in.</div>') +
@@ -1913,11 +1967,12 @@ function allocGroupHtml(g, b){
 function wireAllocGroup(g, b){
   wireChips(g.chip, true, function(vals){
     document.getElementById(g.chip+'Custom_wrap').style.display = vals.indexOf(ALLOC_OTHER)>-1 ? '' : 'none';
+    renderChargeRows();
   });
   document.getElementById(g.chip+'Custom').value = (b.allocCustom||{})[g.key] || '';
 }
 function allocSummary(b){
-  var names = allocatedResources(b).map(function(r){return r.name;});
+  var names = allocIds(b).map(function(id){ var r = DB.resources.find(function(x){return x.id===id;}); return r ? r.name : bookingCharge(b,id).name; }).filter(Boolean);
   ['equipment','transport','other'].forEach(function(k){ var c = (b.allocCustom||{})[k]; if(c) names.push(c); });
   return names.join(', ');
 }
@@ -1979,6 +2034,8 @@ function openBookingDetail(id){
     '<div class="section-title">Allocation</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
       ALLOC_GROUPS.map(function(g){ return allocGroupHtml(g, b); }).join('') +
+      '<div class="field" style="margin-bottom:8px;"><label>Amounts for this booking</label><div id="bkCharges"></div>' +
+        '<div class="hint">Taken from each resource when it\'s allocated. Change them here for this booking only — later changes to a resource don\'t touch bookings already made.</div></div>' +
       '<button class="btn ghost sm" style="width:100%;margin-top:4px;" onclick="saveAllocation(\''+b.id+'\')">Save allocation</button>' +
     '</div>' +
     '<div class="section-title">Payments <span style="opacity:.6;text-transform:none;font-weight:600;">— tap one to edit</span></div>' +
@@ -1988,7 +2045,7 @@ function openBookingDetail(id){
     '</div>' +
     '<div class="section-title">Discounts</div>' +
     '<div class="card" style="margin-bottom:14px;">' +
-      ((b.discounts||[]).length ? b.discounts.map(function(d){
+      ((b.discounts||[]).length ? b.discounts.slice().sort(byDateAsc('date')).map(function(d){
         return '<div class="kv tap" onclick="openDiscountForm(\''+b.id+'\',\''+d.id+'\')"><span class="k">'+fmtDate(d.date)+(d.note?' — '+esc(d.note):'')+'<span class="edit-ic">Edit</span></span><span class="v" style="color:var(--bad)">−'+fmtMoney(d.amount)+'</span></div>';
       }).join('') + '<div class="kv"><span class="k"><b>Total discount</b></span><span class="v">'+fmtMoney(disc)+'</span></div>'
         : '<div class="hint" style="margin:0;">No discount given. A discount lowers what the client pays and the revenue counted for this event.</div>') +
@@ -2003,7 +2060,48 @@ function openBookingDetail(id){
 
   openSheet(paid ? 'Booking' : 'Quote', body);
   setSheetHeadExtra('<button class="btn ghost sm" onclick="openBookingEditForm(\''+b.id+'\')">Edit</button>');
+  ALLOC_DRAFT = {bookingId: b.id, charges: JSON.parse(JSON.stringify(b.allocCharges||{}))};
   ALLOC_GROUPS.forEach(function(g){ wireAllocGroup(g, b); });
+  renderChargeRows();
+}
+// Working copy of the per-booking amounts while the allocation is being edited.
+var ALLOC_DRAFT = null;
+function selectedAllocIds(){
+  var ids = [];
+  ALLOC_GROUPS.forEach(function(g){
+    if(document.getElementById(g.chip)) getChipValue(g.chip, true).forEach(function(v){ if(v!==ALLOC_OTHER) ids.push(v); });
+  });
+  return ids;
+}
+function renderChargeRows(){
+  var box = document.getElementById('bkCharges');
+  if(!box || !ALLOC_DRAFT) return;
+  var ids = selectedAllocIds();
+  ids.forEach(function(id){
+    if(ALLOC_DRAFT.charges[id]) return;
+    var r = DB.resources.find(function(x){return x.id===id;});
+    if(r) ALLOC_DRAFT.charges[id] = chargeFromResource(r); // newly picked: take today's amount
+  });
+  if(!ids.length){ box.innerHTML = '<div class="hint" style="margin:0;">Pick resources above to see their amounts.</div>'; return; }
+  box.innerHTML = ids.map(function(id){
+    var c = ALLOC_DRAFT.charges[id] || {name:'', flow:'', amount:0};
+    var r = DB.resources.find(function(x){return x.id===id;});
+    return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">' +
+      '<div style="flex:1;min-width:0;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(r ? r.name : (c.name||'Deleted resource'))+'</div>' +
+      '<select data-cid="'+esc(id)+'" data-k="flow" style="width:118px;padding:8px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink);font-size:13px;">' +
+        MONEY_FLOWS.map(function(m){ return '<option value="'+m.key+'"'+(m.key===(c.flow||'')?' selected':'')+'>'+esc(m.key?m.label:'No money')+'</option>'; }).join('') +
+      '</select>' +
+      '<input type="number" data-cid="'+esc(id)+'" data-k="amount" value="'+(Number(c.amount)||'')+'" placeholder="₹" style="width:92px;padding:8px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink);font-size:14px;"'+(c.flow?'':' disabled')+'>' +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('[data-cid]').forEach(function(el){
+    var handler = function(){
+      var c = ALLOC_DRAFT.charges[el.dataset.cid]; if(!c) return;
+      if(el.dataset.k==='flow'){ c.flow = el.value; var amt = box.querySelector('input[data-cid="'+el.dataset.cid+'"]'); amt.disabled = !c.flow; }
+      else c.amount = Number(el.value)||0;
+    };
+    el.addEventListener('input', handler); el.addEventListener('change', handler);
+  });
 }
 function openBookingEditForm(id){
   var b = DB.bookings.find(function(x){return x.id===id;});
@@ -2070,11 +2168,20 @@ function saveAllocation(bookingId){
   var b = DB.bookings.find(function(x){return x.id===bookingId;});
   if(!b) return;
   b.allocCustom = b.allocCustom || {};
+  var draft = (ALLOC_DRAFT && ALLOC_DRAFT.bookingId===b.id) ? ALLOC_DRAFT.charges : JSON.parse(JSON.stringify(b.allocCharges||{}));
   ALLOC_GROUPS.forEach(function(g){
     var vals = getChipValue(g.chip, true);
-    b[g.field] = vals.filter(function(v){ return v!==ALLOC_OTHER && DB.resources.some(function(r){return r.id===v;}); });
+    b[g.field] = vals.filter(function(v){ return v!==ALLOC_OTHER && (draft[v] || DB.resources.some(function(r){return r.id===v;})); });
     b.allocCustom[g.key] = vals.indexOf(ALLOC_OTHER)>-1 ? document.getElementById(g.chip+'Custom').value.trim() : '';
   });
+  var charges = {};
+  allocIds(b).forEach(function(id){
+    var c = draft[id];
+    if(!c){ var r = DB.resources.find(function(x){return x.id===id;}); c = r ? chargeFromResource(r) : {name:'', flow:'', amount:0}; }
+    var r2 = DB.resources.find(function(x){return x.id===id;});
+    charges[id] = {name: r2 ? r2.name : c.name, flow: c.flow||'', amount: c.flow ? (Number(c.amount)||0) : 0};
+  });
+  b.allocCharges = charges;
   saveData(); openBookingDetail(bookingId); if(renderers[currentTab]) renderers[currentTab](); toast('Allocation saved');
 }
 // ctx 'inquiry' = opened from the inquiry screen (go back there while it's still an inquiry)
@@ -2224,7 +2331,7 @@ function expenseRow(e, ctx){
 var expenseFilter = 'All';
 function renderExpenses(){
   var el = document.getElementById('view-expenses');
-  var all = DB.expenses.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||'') || (b.createdAt||'').localeCompare(a.createdAt||''); });
+  var all = DB.expenses.slice().sort(byExpenseEventDate);
   var usedTypes = [];
   all.forEach(function(e){ if(usedTypes.indexOf(e.type)===-1) usedTypes.push(e.type); });
   if(expenseFilter!=='All' && usedTypes.indexOf(expenseFilter)===-1) expenseFilter = 'All';
@@ -2390,7 +2497,7 @@ function openSpendSummary(){
 function openEventSpend(bookingId){
   var b = DB.bookings.find(function(x){return x.id===bookingId;});
   if(!b) return;
-  var list = expensesFor(b.id).sort(function(x,y){return (y.date||'').localeCompare(x.date||'');});
+  var list = expensesFor(b.id).sort(byDateAsc('date'));
   var resOut = resourceMoney(b,'out'), resIn = resourceMoney(b,'in'), disc = discountTotal(b);
   var spend = expenseTotal(list) + resOut, rev = bookingRevenue(b), pr = rev - spend;
   var body =
@@ -2466,7 +2573,7 @@ function openResourceForm(id){
     '<div class="field"><label>Name</label><input type="text" id="rName" placeholder="e.g. Setup 4 / New Tempo Traveller / Complimentary cake" value="'+esc(r?r.name:'')+'"></div>' +
     '<div class="field"><label>Money</label>' + chips('rFlow', MONEY_FLOWS.map(function(m){return m.label;}), (MONEY_FLOWS.find(function(m){return m.key===(r?r.flow||'':'');})||MONEY_FLOWS[0]).label) +
       '<div id="rAmtWrap" style="margin-top:10px;'+(r&&r.flow?'':'display:none;')+'"><input type="number" id="rAmt" placeholder="Amount per booking (₹)" value="'+(r&&r.amount?Number(r.amount):'')+'"></div>' +
-      '<div class="hint">Money in: an add-on the client pays for — added to the booking amount. Money out: a cost such as a complimentary item — taken off profit. Each booking it\'s allocated to counts this amount.</div></div>' +
+      '<div class="hint">Money in: an add-on the client pays for — added to the booking amount. Money out: a cost such as a complimentary item — taken off profit. This is the starting amount when you allocate it to a booking; you can change it on the booking. Changing it here later only affects new allocations, not bookings already made.</div></div>' +
     '<div class="field"><label>Notes <span style="opacity:.6">(optional)</span></label><textarea id="rNotes" placeholder="Optional">'+esc(r?r.notes:'')+'</textarea></div>' +
     '<div class="field"><label>Status</label>' + chips('rActive', ['Active','Inactive'], r&&!r.active?'Inactive':'Active') + '</div>';
   var foot = '<button class="btn primary" id="rSaveBtn">'+(r?'Save changes':'Add resource')+'</button>';
@@ -2493,15 +2600,14 @@ function openResourceForm(id){
 }
 function deleteResource(id){
   confirmModal({
-    title:'Delete this resource?', message:'Bookings that reference it will just show it as unassigned.',
+    title:'Delete this resource?', message:'Bookings it is already allocated to keep it, with their own amount. It just won\'t be offered for new allocations.',
     okText:'Delete', danger:true,
     onOk:function(){
-      DB.resources = DB.resources.filter(function(r){return r.id!==id;});
-      DB.bookings.forEach(function(b){
-        b.equipmentResourceIds = (b.equipmentResourceIds||[]).filter(function(x){return x!==id;});
-        b.transportResourceIds = (b.transportResourceIds||[]).filter(function(x){return x!==id;});
-        b.extraResourceIds = (b.extraResourceIds||[]).filter(function(x){return x!==id;});
+      var gone = DB.resources.find(function(r){return r.id===id;});
+      DB.bookings.forEach(function(b){ // make sure every booking holding it has its own copy before it goes
+        if(allocIds(b).indexOf(id)>-1){ b.allocCharges = b.allocCharges || {}; if(!b.allocCharges[id] && gone) b.allocCharges[id] = chargeFromResource(gone); }
       });
+      DB.resources = DB.resources.filter(function(r){return r.id!==id;});
       saveData(); renderResources(); toast('Resource deleted');
     }
   });
@@ -2540,10 +2646,10 @@ function renderSearchResults(q){
   var bkFields = ['name','phone','altPhone','partyHall','location','area','eventType','channel','notes','eventDate','bookingDate','status'];
   var resFields = ['name','notes','type'];
 
-  var inqMatches = DB.inquiries.filter(function(r){ return searchableText(r, inqFields).indexOf(q)>-1; });
-  var bkMatches = DB.bookings.filter(function(r){ return searchableText(r, bkFields).indexOf(q)>-1; });
+  var inqMatches = DB.inquiries.filter(function(r){ return searchableText(r, inqFields).indexOf(q)>-1; }).sort(byEventDateAsc);
+  var bkMatches = DB.bookings.filter(function(r){ return searchableText(r, bkFields).indexOf(q)>-1; }).sort(byDateAsc('eventDate'));
   var resMatches = DB.resources.filter(function(r){ return searchableText(r, resFields).indexOf(q)>-1; });
-  var fuMatches = DB.followups.filter(function(f){ return searchableText(f, ['note']).indexOf(q)>-1; });
+  var fuMatches = DB.followups.filter(function(f){ return searchableText(f, ['note']).indexOf(q)>-1; }).sort(byFollowupEventDate);
 
   var total = inqMatches.length + bkMatches.length + resMatches.length + fuMatches.length;
   if(total===0){ box.innerHTML = emptyState('No matches','Try a different name, phone number or keyword.'); return; }
@@ -2811,7 +2917,7 @@ function exportExcelBackup(){
   if(typeof XLSX === 'undefined'){ toast('Excel export is not available in this file.'); return; }
   var s = DB.settings;
 
-  var inquiriesRows = DB.inquiries.map(function(i){
+  var inquiriesRows = DB.inquiries.slice().sort(byEventDateAsc).map(function(i){
     return {
       'ID': i.id, 'Created At': i.createdAt,
       'Inquiry Date': i.inquiryDate, 'Client Name': i.name, 'Phone': String(i.phone||''), 'Alternate Phone': String(i.altPhone||''),
@@ -2821,7 +2927,7 @@ function exportExcelBackup(){
     };
   });
 
-  var followupRows = DB.followups.slice().sort(function(a,b){return new Date(a.dueAt)-new Date(b.dueAt);}).map(function(f){
+  var followupRows = DB.followups.slice().sort(byFollowupEventDate).map(function(f){
     var inq = DB.inquiries.find(function(x){return x.id===f.inquiryId;});
     return {
       'ID': f.id, 'Inquiry ID': f.inquiryId, 'Created At': f.createdAt,
@@ -2830,7 +2936,7 @@ function exportExcelBackup(){
     };
   });
 
-  var bookingsRows = DB.bookings.map(function(b){
+  var bookingsRows = DB.bookings.slice().sort(byDateAsc('eventDate')).map(function(b){
     var inq = DB.inquiries.find(function(x){return x.id===b.inquiryId;});
     return {
       'ID': b.id, 'Inquiry ID': b.inquiryId||'', 'Created At': b.createdAt,
@@ -2845,13 +2951,14 @@ function exportExcelBackup(){
       'Status': b.status, 'Added to Calendar': b.calendarAdded ? 'Yes' : 'No', 'Notes': b.notes||'',
       'Start Time': b.startTime||'', 'End Time': b.endTime||'', 'Expenses': bookingCosts(b), 'Profit': bookingRevenue(b) - bookingCosts(b),
       'Party Hall': b.partyHall||'', 'Area': b.area||'', 'Discount': discountTotal(b), 'Client Pays': bookingNet(b),
-      'Booked': hasPayment(b) ? 'Yes' : 'No (quote)', 'Custom Allocation': JSON.stringify(b.allocCustom||{})
+      'Booked': hasPayment(b) ? 'Yes' : 'No (quote)', 'Custom Allocation': JSON.stringify(b.allocCustom||{}),
+      'Allocation Amounts': JSON.stringify(b.allocCharges||{})
     };
   });
 
   var paymentsRows = [];
-  DB.bookings.forEach(function(b){
-    (b.payments||[]).forEach(function(p){
+  DB.bookings.slice().sort(byDateAsc('eventDate')).forEach(function(b){
+    (b.payments||[]).slice().sort(byDateAsc('date')).forEach(function(p){
       paymentsRows.push({
         'ID': p.id, 'Booking ID': b.id,
         'Client Name': b.name, 'Event Date': b.eventDate, 'Payment Date': p.date, 'Amount': Number(p.amount)||0,
@@ -2860,7 +2967,7 @@ function exportExcelBackup(){
     });
   });
 
-  var expenseRows = DB.expenses.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');}).map(function(e){
+  var expenseRows = DB.expenses.slice().sort(byExpenseEventDate).map(function(e){
     var b = e.bookingId ? DB.bookings.find(function(x){return x.id===e.bookingId;}) : null;
     return {'ID': e.id, 'Booking ID': e.bookingId||'', 'Created At': e.createdAt||'', 'Date': e.date, 'Type': e.type, 'Amount': Number(e.amount)||0,
       'Event': b ? (b.name+' — '+b.eventType+' ('+b.eventDate+')') : 'General', 'Notes': e.note||''};
@@ -2941,7 +3048,7 @@ function exportExcelBackup(){
   XLSX.utils.book_append_sheet(wb, wsFu, 'Follow-ups');
 
   var wsBk = XLSX.utils.json_to_sheet(bookingsRows);
-  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:12},{wch:12},XLSX_HIDDEN_COL];
+  wsBk['!cols'] = [XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,XLSX_HIDDEN_COL,{wch:12},{wch:12},{wch:16},{wch:20},{wch:13},{wch:13},{wch:20},{wch:16},{wch:13},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:14},XLSX_HIDDEN_COL,{wch:18},{wch:10},{wch:12},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:12},{wch:12},XLSX_HIDDEN_COL,XLSX_HIDDEN_COL];
   XLSX.utils.book_append_sheet(wb, wsBk, 'Bookings');
 
   var wsPay = XLSX.utils.json_to_sheet(paymentsRows);
@@ -3075,6 +3182,7 @@ function restoreFromExcelFile(file){
           transportResourceIds: idList(r['Transport ID']),
           partyHall: r['Party Hall']||'', area: r['Area']||'', discounts: [],
           allocCustom: (function(){ try{ return r['Custom Allocation'] ? JSON.parse(r['Custom Allocation']) : {}; }catch(e){ return {}; } })(),
+          allocCharges: (function(){ try{ return r['Allocation Amounts'] ? JSON.parse(r['Allocation Amounts']) : {}; }catch(e){ return {}; } })(),
           extraResourceIds: r['Extra Resource IDs'] ? String(r['Extra Resource IDs']).split(',').map(function(x){return x.trim();}).filter(Boolean) : [],
           status:r['Status']||'confirmed', calendarAdded: r['Added to Calendar']==='Yes', notes:r['Notes']||'', payments:[],
           startTime:String(r['Start Time']||''), endTime:String(r['End Time']||'')
