@@ -1345,6 +1345,7 @@ function renderFollowupTaskRows(){
       '<div class="avatar" style="cursor:pointer;" onclick="openInquiryDetail(\''+f.inquiryId+'\')">'+initials(inq?inq.name:'?')+'</div>' +
       '<div class="row-main" style="cursor:pointer;" onclick="openInquiryDetail(\''+f.inquiryId+'\')">' +
         '<div class="row-title">'+esc(inq?inq.name:'Unknown')+'</div>' +
+        (inq ? eventLinesHtml(inq) : '') +
         '<div class="row-sub">'+esc(f.note||'Follow up')+' · <span style="color:'+(overdue?'var(--bad)':'var(--ink-dim)')+';font-weight:'+(overdue?'700':'600')+'">'+fmtDateTime(f.dueAt)+'</span></div>' +
       '</div>' +
       '<div class="row-end" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">' +
@@ -1357,6 +1358,13 @@ function renderFollowupTaskRows(){
 function emptyState(title, sub){
   return '<div class="empty"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke-width="1.6"/><path d="M9 12h6M12 9v6" stroke-width="1.6" stroke-linecap="round"/></svg><p><b>'+esc(title)+'</b><br>'+esc(sub)+'</p></div>';
 }
+// Two lines under the name on the Inquiries and Bookings lists:
+// "Event type · Event date" and "Party hall · Location · Area" (blank parts are skipped).
+function eventLinesHtml(rec){
+  var venue = [rec.partyHall, rec.location, rec.area].filter(function(x){return x && String(x).trim();});
+  return '<div class="row-sub">'+esc(rec.eventType||'—')+' · '+fmtDateShort(rec.eventDate)+'</div>' +
+    '<div class="row-sub" style="white-space:normal;">'+(venue.length ? esc(venue.join(' · ')) : '<span style="opacity:.6">No venue yet</span>')+'</div>';
+}
 function inquiryRow(i){
   var b = bookingForInquiry(i.id);
   var money = b ? ('<div class="row-sub num" style="margin-top:3px;">'+(hasPayment(b) ? fmtMoney(paidSoFarAll(b))+' paid' : 'Quote '+fmtMoney(bookingNet(b)))+'</div>') : '';
@@ -1364,7 +1372,7 @@ function inquiryRow(i){
     '<div class="avatar">'+initials(i.name)+'</div>' +
     '<div class="row-main">' +
       '<div class="row-title">'+esc(i.name)+'</div>' +
-      '<div class="row-sub">'+esc(i.eventType)+' · '+fmtDateShort(i.eventDate)+' · '+esc(i.partyHall || i.location || i.channel)+'</div>' +
+      eventLinesHtml(i) +
     '</div>' +
     '<div class="row-end"><span class="badge '+i.status+'">'+statusLabel(i.status)+'</span>'+money+'</div>' +
   '</div>';
@@ -1784,7 +1792,7 @@ function bookingRow(b){
     '<div class="avatar">'+initials(b.name)+'</div>' +
     '<div class="row-main">' +
       '<div class="row-title">'+esc(b.name)+'</div>' +
-      '<div class="row-sub">'+esc(b.eventType)+' · '+fmtDateShort(b.eventDate)+(b.partyHall?' · '+esc(b.partyHall):'')+'</div>' +
+      eventLinesHtml(b) +
     '</div>' +
     '<div class="row-end">' +
       '<div class="row-amt num">'+fmtMoney(bookingNet(b))+'</div>' +
